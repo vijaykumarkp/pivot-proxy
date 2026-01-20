@@ -863,17 +863,32 @@ const App = () => {
         originalCumulativeBonus
       });
     } else {
-      // Treat as individual policy - no policy-level SI/CB
+      // Treat as individual policy - extract from first insured member's individual_policy_cumulative_bonus
       sumInsured = null; // Individual policies don't have policy-level SI
-      cumulativeBonus = null; // Individual policies don't have policy-level CB
       originalSumInsured = null;
-      originalCumulativeBonus = null;
       memberCount = insuredDetails.length; // Count members
       
-      console.log('📊 Treated as Individual Policy (member-level only):', { 
-        memberCount,
-        note: 'SI and CB are member-level only'
-      });
+      // Extract individual_policy_cumulative_bonus from the first insured member
+      if (insuredDetails.length > 0) {
+        const firstInsured = insuredDetails[0];
+        cumulativeBonus = firstInsured.individual_policy_cumulative_bonus;
+        originalCumulativeBonus = firstInsured.individual_policy_cumulative_bonus;
+        
+        console.log('📊 Extracted from Individual Policy (first member):', { 
+          cumulativeBonus,
+          originalCumulativeBonus,
+          memberCount,
+          source: 'individual_policy_cumulative_bonus from first insured member'
+        });
+      } else {
+        cumulativeBonus = null;
+        originalCumulativeBonus = null;
+        
+        console.log('📊 No insured members found for Individual Policy:', { 
+          memberCount: 0,
+          cumulativeBonus: null
+        });
+      }
     }
     
     // Convert to numbers - handle various formats (for internal comparison only)
@@ -928,9 +943,9 @@ const App = () => {
         date_of_birth: insured.date_of_birth || insured.dob,
         age: insured.age || calculateAge(insured.date_of_birth || insured.dob), // Use age from data or compute from DOB
         individual_sum_insured: insured.individual_policy_sum_insured, // Keep individual SI separate
-        individual_cumulative_bonus: insured.individual_cumulative_bonus, // Keep individual CB separate
+        individual_cumulative_bonus: insured.individual_policy_cumulative_bonus, // Keep individual CB separate
         original_individual_sum_insured: insured.individual_policy_sum_insured, // For display
-        original_individual_cumulative_bonus: insured.individual_cumulative_bonus, // For display
+        original_individual_cumulative_bonus: insured.individual_policy_cumulative_bonus, // For display
         declared_ped: insured.declared_ped // Member-level PED
       })).filter(m => m.name),
       
@@ -1913,7 +1928,7 @@ const getSumInsuredFromData = (responseData) => {
             <div className="flex justify-between items-center mb-8">
               <div>
                 <h1 className="text-3xl font-bold text-gray-800">PIVOT Portability Module</h1>
-                <p className="text-xs text-gray-500 mt-1">Demo Environment</p>
+                <p className="text-xs text-gray-500 mt-1">AI-powered policy portability analysis</p>
               </div>
               <div className="space-x-4">
                 <button
@@ -1934,13 +1949,9 @@ const getSumInsuredFromData = (responseData) => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div className="space-y-4">
                 <div className="bg-white rounded-lg shadow-lg p-6">
-                  <h2 className="text-xl font-semibold mb-2">Upload Current / Most Recent Policy Document</h2>
-                  <p className="text-sm text-gray-600 mb-2">AI-powered policy portability analysis</p>
-                  <p className="text-xs text-gray-500 mb-2">This document will be treated as the latest active policy for analysis.</p>
-                  <p className="text-xs text-gray-500 mb-4">This policy will be treated as the reference policy for multi-year analysis.</p>
+                  <h2 className="text-xl font-semibold mb-4">Upload Current / Most Recent Policy Document</h2>
                   <form onSubmit={handleFileUpload}>
                     <div>
-                      <label className="block text-gray-700 mb-2">Select File</label>
                       <input
                         type="file"
                         onChange={handleFileChange}
@@ -1955,11 +1966,7 @@ const getSumInsuredFromData = (responseData) => {
                       )}
                     </div>
                     
-                    <div className="mb-4">
-                      <p className="text-xs text-gray-500">Files are processed securely and never stored</p>
-                      <p className="text-xs text-gray-500 mt-1">No customer data is retained after analysis</p>
-                    </div>
-                    
+                                        
                     <div className="flex space-x-3">
                       <button
                         type="submit"
@@ -2411,7 +2418,7 @@ const getSumInsuredFromData = (responseData) => {
         <div className="container mx-auto px-4 py-6">
           <div className="max-w-4xl mx-auto">
             <div className="bg-white rounded-lg shadow-lg p-6">
-              <h3 className="text-xl font-semibold mb-3">Multi-Year Policy Analysis (Coming Next)</h3>
+              <h3 className="text-xl font-semibold mb-3">Multi-Year Policy Analysis</h3>
               <p className="text-sm text-gray-600 mb-6">
                 Compare this policy against prior years to detect coverage changes, sum insured movement, cumulative bonus shifts, and continuity gaps.
               </p>
@@ -2450,10 +2457,6 @@ const getSumInsuredFromData = (responseData) => {
                   Multi-year policy upload will be enabled next. Current policy is saved as the reference year.
                 </p>
               </div>
-              
-              <p className="text-xs text-gray-500">
-                Upload historical policies after current policy analysis is complete.
-              </p>
               
               {/* Multi-Year Policy Upload Section */}
               {multiYearUploadVisible && (
@@ -2776,8 +2779,10 @@ const getSumInsuredFromData = (responseData) => {
                                               originalValue : 
                                               'Not specified'
                                           ) : (
-                                            // Individual: Show "Member-level" (no policy-level CB)
-                                            <span className="text-gray-500 italic">Member-level</span>
+                                            // Individual: Show the actual individual_policy_cumulative_bonus value
+                                            originalValue !== null && originalValue !== undefined ? 
+                                              originalValue : 
+                                              'Not specified'
                                           )}
                                           {isReset && isFloater && (
                                             <div className="text-xs text-red-600 mt-1">

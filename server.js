@@ -6,6 +6,8 @@ import FormData from "form-data";
 import path from "path";
 import { fileURLToPath } from "url"
 import { Buffer } from 'buffer';
+import session from 'express-session';
+import { requireAuth, validateAccessCode, generateSessionSecret, getSessionConfig } from './auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,13 +18,16 @@ const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 const PORT = process.env.PORT || 3000;
 
+// JSON body parser (needed for login POST)
+app.use(express.json());
+
 // CORS middleware
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   res.header('Access-Control-Allow-Credentials', 'true');
-  
+
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
   } else {
@@ -30,51 +35,148 @@ app.use((req, res, next) => {
   }
 });
 
-// Static files
-app.use(express.static(path.join(__dirname, 'public')));
+// Session middleware (must come before auth)
+const sessionSecret = process.env.SESSION_SECRET || generateSessionSecret();
+app.use(session(getSessionConfig(sessionSecret)));
+
+// Static files: only serve login page assets, logos, and stylesheets without auth
+// The main app files (index.html, app-new.js) are served by explicit routes after auth
+app.use('/logos', express.static(path.join(__dirname, 'public', 'logos')));
+app.use('/assets', express.static(path.join(__dirname, 'public', 'assets')));
+app.use('/login.html', express.static(path.join(__dirname, 'public', 'login.html')));
 
 /* =========================
-   Demo Portal
+   Health check (no auth)
+========================= */
+app.get("/api/health", (req, res) => {
+  res.json({ status: "PIVOT proxy alive" });
+});
+
+/* =========================
+   Auth routes (no auth required)
+========================= */
+
+// Login page
+app.get("/login", (req, res) => {
+  // If already authenticated, redirect to dashboard
+  if (req.session && req.session.authenticated) {
+    return res.redirect('/');
+  }
+  res.sendFile(path.join(__dirname, "public", "login.html"));
+});
+
+// Login API
+app.post("/api/auth/login", (req, res) => {
+  const { access_code } = req.body;
+
+  if (!access_code) {
+    return res.status(400).json({ success: false, error: 'Access code required' });
+  }
+
+  const client = validateAccessCode(access_code);
+
+  if (!client) {
+    console.log(`[AUTH] Failed login attempt with code: ${access_code.substring(0, 4)}****`);
+    return res.status(401).json({ success: false, error: 'Invalid access code' });
+  }
+
+  if (client.expired) {
+    console.log(`[AUTH] Expired access attempt: ${client.client_name}`);
+    return res.status(403).json({ success: false, expired: true, error: 'Access has expired' });
+  }
+
+  // Set session data
+  req.session.authenticated = true;
+  req.session.clientInfo = {
+    client_id: client.client_id,
+    client_name: client.client_name,
+    role: client.role,
+    allowed_modules: client.allowed_modules,
+    rate_limit: client.rate_limit,
+    expiry_date: client.expiry_date
+  };
+
+  console.log(`[AUTH] Login successful: ${client.client_name} (${client.role})`);
+
+  res.json({
+    success: true,
+    client_name: client.client_name,
+    role: client.role,
+    allowed_modules: client.allowed_modules
+  });
+});
+
+// Logout API
+app.post("/api/auth/logout", (req, res) => {
+  const clientName = req.session?.clientInfo?.client_name || 'Unknown';
+  req.session.destroy((err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Logout failed' });
+    }
+    console.log(`[AUTH] Logout: ${clientName}`);
+    res.json({ success: true });
+  });
+});
+
+// Session check API (frontend can call this to check auth state)
+app.get("/api/auth/session", (req, res) => {
+  if (req.session && req.session.authenticated) {
+    res.json({
+      authenticated: true,
+      ...req.session.clientInfo
+    });
+  } else {
+    res.json({ authenticated: false });
+  }
+});
+
+/* =========================
+   Auth middleware - everything below requires login
+========================= */
+app.use(requireAuth);
+
+/* =========================
+   Dashboard (protected)
 ========================= */
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-app.get("/simple-test.html", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "simple-test.html"));
-});
-
-app.get("/test-no-jsx.js", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "test-no-jsx.js"));
-});
-
-app.get("/app-working.js", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "app-working.js"));
-});
-
-app.get("/app.js", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "app.js"));
-});
-
 app.get("/app-new.js", (req, res) => {
-  res.set('Cache-Control', 'no-store');
   res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, "public", "app-new.js"));
 });
 
+/* =========================
+   Admin route (Super Admin only)
+========================= */
+app.get("/admin", (req, res) => {
+  if (!req.clientInfo || req.clientInfo.role !== 'super_admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  res.json({
+    message: 'Admin dashboard placeholder',
+    note: 'Full admin dashboard will be built in Phase 3',
+    admin: req.clientInfo.client_name
+  });
+});
+
+/* =========================
+   PIVOT Portability Demo Analysis
+========================= */
 app.post("/api/ml_process", upload.single('input_file'), async (req, res) => {
   try {
     const apiKey = process.env.API_KEY;
     console.log('API Key available:', !!apiKey);
     console.log('API Key length:', apiKey?.length);
-    
+
     if (!apiKey) {
       return res.status(500).json({ error: 'API key not configured on server' });
     }
 
     // Create a new FormData object for the external API
     const externalFormData = new FormData();
-    
+
     // Add the file if it exists
     if (req.file) {
       externalFormData.append('input_file', req.file.buffer, {
@@ -83,11 +185,11 @@ app.post("/api/ml_process", upload.single('input_file'), async (req, res) => {
       });
       console.log('File added:', req.file.originalname, 'size:', req.file.size, 'type:', req.file.mimetype);
     }
-    
+
     // Add other form fields
     externalFormData.append('insurance_company', 'STAR HEALTH');
     externalFormData.append('data_type', 'specific');
-    
+
     console.log('FormData fields created');
 
     const response = await fetch('https://PIVOT-Port-PolDoc-Health.Attributum.com/api/ml_process', {
@@ -103,7 +205,7 @@ app.post("/api/ml_process", upload.single('input_file'), async (req, res) => {
 
     const data = await response.json();
     console.log('External API response:', data);
-    
+
     if (!response.ok) {
       return res.status(response.status).json(data);
     }
@@ -115,29 +217,6 @@ app.post("/api/ml_process", upload.single('input_file'), async (req, res) => {
   }
 });
 
-app.get("/test-app.js", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "test-app.js"));
-});
-
-app.get("/app-simple.js", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "app-simple.js"));
-});
-
-app.get("/assets/pivot-logo.png", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "assets", "pivot-logo.png"));
-});
-
-app.get("/assets/attributum-logo.png", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "assets", "attributum-logo.png"));
-});
-
-/* =========================
-   Health check
-========================= */
-app.get("/api/health", (req, res) => {
-  res.json({ status: "PIVOT proxy alive" });
-});
-
 /* =========================
    PIVOT Portability Demo Analysis
 ========================= */
@@ -145,7 +224,7 @@ app.post("/api/portability/analyze", upload.single("document"), async (req, res)
   try {
     console.log('=== PIVOT Portability Demo Analysis ===');
     console.log('File:', req.file ? req.file.originalname : 'No file');
-    
+
     if (!req.file) {
       console.log('ERROR: No file uploaded');
       return res.status(400).json({ error: "No file uploaded" });
@@ -177,9 +256,9 @@ app.post("/api/portability/analyze", upload.single("document"), async (req, res)
     if (!response.ok) {
       const errorText = await response.text();
       console.error('PIVOT API Error:', response.status, errorText);
-      return res.status(response.status).json({ 
+      return res.status(response.status).json({
         error: `PIVOT API Error: ${response.status}`,
-        details: errorText 
+        details: errorText
       });
     }
 
@@ -189,9 +268,9 @@ app.post("/api/portability/analyze", upload.single("document"), async (req, res)
 
   } catch (error) {
     console.error('Proxy Error:', error);
-    res.status(500).json({ 
-      error: "Proxy server error", 
-      details: error.message 
+    res.status(500).json({
+      error: "Proxy server error",
+      details: error.message
     });
   }
 });
@@ -206,7 +285,7 @@ app.post("/api/portability/upload", upload.single("input_file"), async (req, res
     console.log('Insurance Company:', req.body.insurance_company);
     console.log('Data Type:', req.body.data_type);
     console.log('Request body keys:', Object.keys(req.body));
-    
+
     if (!req.file) {
       console.log('ERROR: No file uploaded');
       return res.status(400).json({ error: "No file uploaded" });
@@ -238,9 +317,9 @@ app.post("/api/portability/upload", upload.single("input_file"), async (req, res
     if (!response.ok) {
       const errorText = await response.text();
       console.error('PIVOT API Error:', response.status, errorText);
-      return res.status(response.status).json({ 
+      return res.status(response.status).json({
         error: `PIVOT API Error: ${response.status}`,
-        details: errorText 
+        details: errorText
       });
     }
 
@@ -250,9 +329,9 @@ app.post("/api/portability/upload", upload.single("input_file"), async (req, res
 
   } catch (error) {
     console.error('Proxy Error:', error);
-    res.status(500).json({ 
-      error: "Proxy server error", 
-      details: error.message 
+    res.status(500).json({
+      error: "Proxy server error",
+      details: error.message
     });
   }
 });
@@ -264,7 +343,7 @@ app.post("/ml_process", upload.single("input_file"), (req, res) => {
   console.log('=== UPLOAD RECEIVED ===');
   console.log('File:', req.file?.originalname);
   console.log('Insurance company:', req.body.insurance_company);
-  
+
   // Return working mock data for demo
   const mockResponse = {
     response: {
@@ -291,7 +370,7 @@ app.post("/ml_process", upload.single("input_file"), (req, res) => {
       }
     }
   };
-  
+
   console.log('Returning mock data');
   res.json(mockResponse);
 });
@@ -343,5 +422,5 @@ app.post("/api/underwriting/analyze", upload.single("input_file"), async (req, r
 ========================= */
 app.listen(PORT, () => {
   console.log(`PIVOT proxy running on port ${PORT}`);
+  console.log(`[AUTH] Authentication enabled. Login at http://localhost:${PORT}/login`);
 });
-

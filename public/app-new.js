@@ -423,6 +423,34 @@ const App = () => {
   const [uwResponseData, setUwResponseData] = useState(null);
   const [uwFileError, setUwFileError] = useState(null);
 
+  // Session & permissions state (Phase 2)
+  const [sessionInfo, setSessionInfo] = useState(null);
+  const [allowedModules, setAllowedModules] = useState([]);
+
+  // Fetch session permissions on mount
+  useEffect(() => {
+    fetch('/api/auth/permissions')
+      .then(res => res.json())
+      .then(data => {
+        setSessionInfo(data);
+        setAllowedModules(data.allowed_modules || []);
+      })
+      .catch(() => {
+        // If permissions fetch fails, redirect to login
+        window.location.href = '/login';
+      });
+  }, []);
+
+  // Helper: check if a module is allowed
+  const hasModule = (mod) => allowedModules.includes(mod);
+
+  // Logout handler
+  const handleLogout = () => {
+    fetch('/api/auth/logout', { method: 'POST' })
+      .then(() => { window.location.href = '/login'; })
+      .catch(() => { window.location.href = '/login'; });
+  };
+
   const handleUwFileChange = (e) => {
     const selectedFile = e.target.files[0];
     if (selectedFile) {
@@ -1764,6 +1792,29 @@ const getSumInsuredFromData = (responseData) => {
           </div>
         </header>
 
+        {/* User session bar */}
+        {sessionInfo && (
+        <div className="bg-blue-900 text-white py-2 px-4">
+          <div className="container mx-auto flex items-center justify-between text-sm">
+            <div className="flex items-center space-x-3">
+              <i className="fas fa-user-circle"></i>
+              <span>{sessionInfo.client_name}</span>
+              {sessionInfo.role === 'super_admin' && (
+                <span className="bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full font-semibold">ADMIN</span>
+              )}
+              <span className="text-blue-300">|</span>
+              <span className="text-blue-300">{allowedModules.length} module{allowedModules.length !== 1 ? 's' : ''} active</span>
+            </div>
+            <div className="flex items-center space-x-4">
+              <span className="text-blue-300 text-xs">DEMO — FOR EVALUATION ONLY</span>
+              <button onClick={handleLogout} className="bg-blue-800 hover:bg-blue-700 px-3 py-1 rounded text-xs font-medium transition-colors">
+                <i className="fas fa-sign-out-alt mr-1"></i> Logout
+              </button>
+            </div>
+          </div>
+        </div>
+        )}
+
         <section className="py-6 bg-gradient-to-br from-blue-50 to-purple-50">
           <div className="container mx-auto px-6">
             <div className="text-center mb-6">
@@ -1782,7 +1833,9 @@ const getSumInsuredFromData = (responseData) => {
         <section className="py-8">
           <div className="container mx-auto px-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-              
+
+              {/* Portability Module */}
+              {hasModule('portability') ? (
               <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer border-2 border-blue-500"
                    onClick={() => setPage('demo')}>
                 <div className="p-6">
@@ -1798,7 +1851,25 @@ const getSumInsuredFromData = (responseData) => {
                   </div>
                 </div>
               </div>
+              ) : (
+              <div className="bg-gray-50 rounded-xl shadow-lg overflow-hidden border-2 border-gray-200 opacity-70">
+                <div className="p-6">
+                  <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mb-4">
+                    <i className="fas fa-exchange-alt text-gray-400 text-xl"></i>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-500 mb-3">PIVOT Portability Module</h3>
+                  <p className="text-gray-400 mb-4">
+                    AI-powered policy portability scoring and compliance checks
+                  </p>
+                  <a href="mailto:pivot@attributum.com" className="flex items-center text-amber-600 font-medium hover:text-amber-700">
+                    <i className="fas fa-envelope mr-2"></i> Contact Sales to Unlock
+                  </a>
+                </div>
+              </div>
+              )}
 
+              {/* Endorsements Module */}
+              {hasModule('endorsements') ? (
               <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer border-2 border-blue-500"
                    onClick={() => window.open('http://35.154.219.243:5173', '_blank')}>
                 <div className="p-6">
@@ -1814,7 +1885,25 @@ const getSumInsuredFromData = (responseData) => {
                   </div>
                 </div>
               </div>
+              ) : (
+              <div className="bg-gray-50 rounded-xl shadow-lg overflow-hidden border-2 border-gray-200 opacity-70">
+                <div className="p-6">
+                  <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mb-4">
+                    <i className="fas fa-file-contract text-gray-400 text-xl"></i>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-500 mb-3">PIVOT Endorsements CoPilot</h3>
+                  <p className="text-gray-400 mb-4">
+                    Automated policy endorsements with built-in validation
+                  </p>
+                  <a href="mailto:pivot@attributum.com" className="flex items-center text-amber-600 font-medium hover:text-amber-700">
+                    <i className="fas fa-envelope mr-2"></i> Contact Sales to Unlock
+                  </a>
+                </div>
+              </div>
+              )}
 
+              {/* TeleMER / Underwriting Module */}
+              {hasModule('telemer') ? (
               <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer border-2 border-blue-500"
                    onClick={() => setPage('underwriting')}>
                 <div className="p-6">
@@ -1830,8 +1919,26 @@ const getSumInsuredFromData = (responseData) => {
                   </div>
                 </div>
               </div>
+              ) : (
+              <div className="bg-gray-50 rounded-xl shadow-lg overflow-hidden border-2 border-gray-200 opacity-70">
+                <div className="p-6">
+                  <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mb-4">
+                    <i className="fas fa-clipboard-check text-gray-400 text-xl"></i>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-500 mb-3">PIVOT Underwriting CoPilot (TeleMER)</h3>
+                  <p className="text-gray-400 mb-4">
+                    AI-assisted underwriting with automated risk assessment
+                  </p>
+                  <a href="mailto:pivot@attributum.com" className="flex items-center text-amber-600 font-medium hover:text-amber-700">
+                    <i className="fas fa-envelope mr-2"></i> Contact Sales to Unlock
+                  </a>
+                </div>
+              </div>
+              )}
 
-              <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer">
+              {/* Operations Module (Coming Soon) */}
+              {hasModule('operations') ? (
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer border-2 border-blue-500">
                 <div className="p-6">
                   <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
                     <i className="fas fa-cogs text-purple-600 text-xl"></i>
@@ -1846,6 +1953,22 @@ const getSumInsuredFromData = (responseData) => {
                   </div>
                 </div>
               </div>
+              ) : (
+              <div className="bg-gray-50 rounded-xl shadow-lg overflow-hidden border-2 border-gray-200 opacity-70">
+                <div className="p-6">
+                  <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mb-4">
+                    <i className="fas fa-cogs text-gray-400 text-xl"></i>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-500 mb-3">PIVOT Operations CoPilot</h3>
+                  <p className="text-gray-400 mb-4">
+                    Automated insurance operations and workflows
+                  </p>
+                  <a href="mailto:pivot@attributum.com" className="flex items-center text-amber-600 font-medium hover:text-amber-700">
+                    <i className="fas fa-envelope mr-2"></i> Contact Sales to Unlock
+                  </a>
+                </div>
+              </div>
+              )}
 
             </div>
           </div>

@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url"
 import { Buffer } from 'buffer';
 import session from 'express-session';
+import rateLimit from 'express-rate-limit';
 import { requireAuth, validateAccessCode, generateSessionSecret, getSessionConfig } from './auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -136,15 +137,94 @@ app.get("/api/auth/session", (req, res) => {
 app.use(requireAuth);
 
 /* =========================
+   Per-client rate limiting
+========================= */
+const clientRateLimiters = {};
+
+function getClientRateLimiter(clientId, monthlyLimit) {
+  if (!clientRateLimiters[clientId]) {
+    clientRateLimiters[clientId] = rateLimit({
+      windowMs: 30 * 24 * 60 * 60 * 1000,  // 30 days
+      max: monthlyLimit || 100,
+      keyGenerator: () => clientId,  // Rate limit by client_id, not IP
+      message: { error: 'Monthly API limit exceeded. Contact sales to increase your quota.', code: 429 },
+      standardHeaders: true,
+      legacyHeaders: false
+    });
+  }
+  return clientRateLimiters[clientId];
+}
+
+// Apply rate limiting to API endpoints
+app.use('/api/portability', (req, res, next) => {
+  if (!req.clientInfo) return next();
+  getClientRateLimiter(req.clientInfo.client_id, req.clientInfo.rate_limit)(req, res, next);
+});
+app.use('/api/underwriting', (req, res, next) => {
+  if (!req.clientInfo) return next();
+  getClientRateLimiter(req.clientInfo.client_id, req.clientInfo.rate_limit)(req, res, next);
+});
+app.use('/api/ml_process', (req, res, next) => {
+  if (!req.clientInfo) return next();
+  getClientRateLimiter(req.clientInfo.client_id, req.clientInfo.rate_limit)(req, res, next);
+});
+
+/* =========================
+   Module access gating
+========================= */
+// Maps API paths to module names (must match clients.json allowed_modules)
+const ENDPOINT_MODULE_MAP = {
+  '/api/portability': 'portability',
+  '/api/ml_process': 'portability',
+  '/ml_process': 'portability',
+  '/api/underwriting': 'telemer'
+};
+
+function requireModule(req, res, next) {
+  // Find which module this endpoint belongs to
+  const matchedPath = Object.keys(ENDPOINT_MODULE_MAP).find(p => req.path.startsWith(p));
+  if (!matchedPath) return next();  // Not a module-gated endpoint
+
+  const requiredModule = ENDPOINT_MODULE_MAP[matchedPath];
+  const allowed = req.clientInfo?.allowed_modules || [];
+
+  if (!allowed.includes(requiredModule)) {
+    console.log(`[ACCESS] BLOCKED: ${req.clientInfo?.client_name} tried ${req.path} (needs "${requiredModule}")`);
+    return res.status(403).json({
+      error: 'Module access denied',
+      message: `Your account does not include the ${requiredModule} module. Contact sales to upgrade.`,
+      required_module: requiredModule
+    });
+  }
+
+  next();
+}
+
+// Apply module gating to all API routes
+app.use(requireModule);
+
+/* =========================
    Dashboard (protected)
 ========================= */
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
+// Inject session data into app-new.js so frontend knows which modules to show
 app.get("/app-new.js", (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, "public", "app-new.js"));
+});
+
+// API endpoint for frontend to get session + module permissions
+app.get("/api/auth/permissions", (req, res) => {
+  res.json({
+    client_name: req.clientInfo?.client_name || 'Unknown',
+    role: req.clientInfo?.role || 'client',
+    allowed_modules: req.clientInfo?.allowed_modules || [],
+    rate_limit: req.clientInfo?.rate_limit || 100,
+    expiry_date: req.clientInfo?.expiry_date || null
+  });
 });
 
 /* =========================

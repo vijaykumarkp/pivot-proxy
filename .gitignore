@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Environment variables (NEVER commit API keys)
+.env
+
+# Backup files
+*.bak
+*.bak2
+*.bak4
+*.backup
+*.backup-before-endorsement-fix
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Archives
+*.tar.gz
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*

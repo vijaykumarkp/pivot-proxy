@@ -57,6 +57,8 @@ app.get("/app.js", (req, res) => {
 });
 
 app.get("/app-new.js", (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, "public", "app-new.js"));
 });
 
@@ -164,7 +166,7 @@ app.post("/api/portability/analyze", upload.single("document"), async (req, res)
     const response = await fetch("https://PIVOT-Port-PolDoc-Health.Attributum.com/api/ml_process", {
       method: "POST",
       headers: {
-        'Authorization': 'Api-Key T33fvOdn.n2AO1NH9GmU2jL9066FEOQvIw9zSLJSc',
+        'Authorization': `Api-Key ${process.env.API_KEY}`,
         ...form.getHeaders()
       },
       body: form
@@ -225,7 +227,7 @@ app.post("/api/portability/upload", upload.single("input_file"), async (req, res
     const response = await fetch("https://PIVOT-Port-PolDoc-Health.Attributum.com/api/ml_process", {
       method: "POST",
       headers: {
-        'Authorization': 'Api-Key T33fvOdn.n2AO1NH9GmU2jL9066FEOQvIw9zSLJSc',
+        'Authorization': `Api-Key ${process.env.API_KEY}`,
         ...form.getHeaders()
       },
       body: form
@@ -292,6 +294,48 @@ app.post("/ml_process", upload.single("input_file"), (req, res) => {
   
   console.log('Returning mock data');
   res.json(mockResponse);
+});
+
+
+/* =========================
+   PIVOT Underwriting CoPilot (TeleMER) Proxy
+========================= */
+app.post("/api/underwriting/analyze", upload.single("input_file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+    const form = new FormData();
+    form.append("input_file", req.file.buffer, {
+      filename: req.file.originalname,
+      contentType: req.file.mimetype
+    });
+    form.append("insurance_company", req.body.insurance_company || req.body.insurance_company || 'telemer_hdfcergo');
+    const apiKey = process.env.TELEMER_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "TeleMER API key not configured" });
+    }
+    console.log("=== PIVOT Underwriting TeleMER Analysis ===");
+    const response = await fetch("https://pivot-uwcopilot-telemer-health.attributum.com/api/ml_process", {
+      method: "POST",
+      headers: {
+        "Authorization": `Api-Key ${apiKey}`,
+        ...form.getHeaders()
+      },
+      body: form.getBuffer()
+    });
+    console.log("TeleMER API Response Status:", response.status);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("TeleMER API Error:", response.status, errorText);
+      return res.status(response.status).json({ error: "TeleMER API Error: " + response.status });
+    }
+    const result = await response.json();
+    res.json(result);
+  } catch (error) {
+    console.error("TeleMER Proxy Error:", error.message);
+    res.status(500).json({ error: "Proxy server error" });
+  }
 });
 
 /* =========================

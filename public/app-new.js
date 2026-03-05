@@ -1,3 +1,4 @@
+const dataBlue = { color: '#1e40af' };
 const { useState, useEffect } = React;
 
 // Configurable score settings
@@ -43,7 +44,6 @@ const loadScoreSettings = () => {
       };
     }
   } catch (error) {
-    console.warn('Failed to load score settings from localStorage:', error);
   }
   return SCORE_SETTINGS;
 };
@@ -123,21 +123,21 @@ const ScoreConfigPage = ({ setPage }) => {
     <div className="min-h-screen bg-gray-50">
       {/* Header with logos */}
       <header className="bg-white shadow-sm border-b">
-        <div className="container mx-auto px-4 py-3">
+        <div className="container mx-auto px-4 py-6">
           <div className="flex items-center justify-between">
             {/* PIVOT Logo - Left */}
-            <div className="flex items-center space-x-6 w-48">
+            <div className="flex items-center space-x-6 w-56">
               <div className="flex items-center space-x-2">
                 <img 
                   src="/logos/pivot-logo.png" 
                   alt="PIVOT Logo" 
-                  className="w-32 h-16 rounded-lg object-contain"
+                  className="w-40 h-20 rounded-lg object-contain"
                   onError={(e) => {
                     e.target.style.display = 'none';
                     e.target.nextElementSibling.style.display = 'flex';
                   }}
                 />
-                <div className="w-32 h-16 bg-purple-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                <div className="w-40 h-20 bg-purple-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
                   <span className="text-white font-bold text-xl">P</span>
                 </div>
               </div>
@@ -150,18 +150,18 @@ const ScoreConfigPage = ({ setPage }) => {
             </div>
             
             {/* Attributum Logo - Right */}
-            <div className="flex items-center justify-end space-x-6 w-48">
+            <div className="flex items-center justify-end space-x-6 w-56">
               <div className="flex items-center space-x-2">
                 <img 
                   src="/logos/attributum-logo.png" 
                   alt="Attributum Logo" 
-                  className="w-40 h-16 rounded-lg object-contain"
+                  className="w-50 h-20 rounded-lg object-contain"
                   onError={(e) => {
                     e.target.style.display = 'none';
                     e.target.nextElementSibling.style.display = 'flex';
                   }}
                 />
-                <div className="w-40 h-16 bg-blue-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                <div className="w-50 h-20 bg-blue-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
                   <span className="text-white font-bold text-xl">A</span>
                 </div>
               </div>
@@ -416,6 +416,58 @@ const App = () => {
   const [previousPolicies, setPreviousPolicies] = useState([]);
   const [multiYearUploadVisible, setMultiYearUploadVisible] = useState(false);
 
+  // Underwriting CoPilot (TeleMER) states
+  const [uwFile, setUwFile] = useState(null);
+    const [uwCompany, setUwCompany] = useState('telemer_hdfcergo');
+  const [uwLoading, setUwLoading] = useState(false);
+  const [uwResponseData, setUwResponseData] = useState(null);
+  const [uwFileError, setUwFileError] = useState(null);
+
+  const handleUwFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+    if (selectedFile) {
+      const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+      if (!allowedTypes.includes(selectedFile.type)) {
+        setUwFileError('Please upload a PDF, JPG, or PNG file');
+        setUwFile(null);
+        return;
+      }
+      if (selectedFile.size > 10 * 1024 * 1024) {
+        setUwFileError('File size must be less than 10MB');
+        setUwFile(null);
+        return;
+      }
+      setUwFileError(null);
+      setUwFile(selectedFile);
+    }
+  };
+
+  const handleUwUpload = async (e) => {
+    e.preventDefault();
+    if (!uwFile) return;
+    setUwFileError(null);
+    setUwLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('input_file', uwFile);
+      formData.append('insurance_company', uwCompany);
+      const response = await fetch('/api/underwriting/analyze', {
+        method: 'POST',
+        body: formData
+      });
+      if (!response.ok) {
+        throw new Error('HTTP error! status: ' + response.status);
+      }
+      const data = await response.json();
+      setUwResponseData(data);
+    } catch (err) {
+      console.error('TeleMER Error:', err);
+      alert('Upload failed: ' + err.message);
+    } finally {
+      setUwLoading(false);
+    }
+  };
+
   // Utility function to calculate age from DOB
   const calculateAge = (dob) => {
     if (!dob) return null;
@@ -481,15 +533,12 @@ const App = () => {
 
   const handlePreviousPolicyUpload = async (e) => {
     const selectedFile = e.target.files[0];
-    console.log('Selected file:', selectedFile);
     
     if (!selectedFile) {
-      console.log('No file selected');
       return;
     }
     
     if (validateFile(selectedFile)) {
-      console.log('File validation passed');
       
       // Create new policy object with unique controller
       const controller = new AbortController();
@@ -506,18 +555,15 @@ const App = () => {
         timeoutId: timeoutId
       };
       
-      console.log('Adding new policy:', newPolicy);
       
       // Add to state first
       setPreviousPolicies(prev => {
         const updated = [...prev, newPolicy];
-        console.log('Policies after adding:', updated);
         return updated;
       });
       
       // Process the file through API
       try {
-        console.log('Starting API call for:', selectedFile.name);
         
         const formData = new FormData();
         formData.append('input_file', selectedFile);
@@ -529,7 +575,6 @@ const App = () => {
           type: selectedFile.type
         });
         
-        console.log('Making POST request to: http://localhost:3000/api/ml_process');
         
         const response = await fetch('http://localhost:3000/api/ml_process', {
           method: 'POST',
@@ -538,14 +583,12 @@ const App = () => {
         });
         
         clearTimeout(timeoutId);
-        console.log('Response received:', response.status, response.statusText);
         
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         
         const data = await response.json();
-        console.log('Multi-year policy API Response received:', data);
         
         // Update the last policy with API data
         setPreviousPolicies(prev => {
@@ -560,7 +603,6 @@ const App = () => {
               controller: null, // Clear controller after completion
               timeoutId: null
             };
-            console.log('Policy updated successfully:', updated[lastIndex]);
           }
           return updated;
         });
@@ -582,7 +624,6 @@ const App = () => {
               controller: null, // Clear controller after error
               timeoutId: null
             };
-            console.log('Policy marked as failed:', updated[lastIndex]);
           }
           return updated;
         });
@@ -591,7 +632,6 @@ const App = () => {
       // Clear the file input
       e.target.value = '';
     } else {
-      console.log('File validation failed');
     }
   };
 
@@ -606,24 +646,20 @@ const App = () => {
       formData.append('input_file', file);
       formData.append('insurance_company', 'STAR HEALTH');
       
-      console.log('Uploading file:', file.name);
       
       const response = await fetch('/api/ml_process', {
         method: 'POST',
         body: formData
       });
       
-      console.log('Response status:', response.status);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const data = await response.json();
-      console.log('API Response received:', data);
       
       const calculatedScore = calculateScore(data);
-      console.log('Calculated score:', calculatedScore);
       setScoreData(calculatedScore);
       setResponseData(data);
       setAnalysisCompleted(true);
@@ -690,10 +726,6 @@ const App = () => {
 
   // Function to process and sequence policies with automatic labeling
   const processPolicies = (currentPolicyData, previousPolicies) => {
-    console.log('=== PROCESSING POLICIES ===');
-    console.log('Current policy data:', currentPolicyData);
-    console.log('Previous policies:', previousPolicies);
-    console.log('Previous policies count:', previousPolicies.length);
     
     // Create immutable copy of all policies
     const allPolicies = [];
@@ -726,8 +758,6 @@ const App = () => {
       });
     });
     
-    console.log('All policies combined:', allPolicies);
-    console.log('Total policies count:', allPolicies.length);
     
     // Process policies with date extraction and labeling - use copied array
     const processedPolicies = allPolicies.map(policy => {
@@ -777,7 +807,6 @@ const App = () => {
       };
     });
     
-    console.log('Processed policies before sorting:', processedPolicies);
     
     // Create single sortedPolicies[] source of truth by policy_start_date (ascending)
     // Oldest policy on the left, most recent on the right
@@ -793,7 +822,6 @@ const App = () => {
       return dateA - dateB; // Ascending order (oldest first)
     });
     
-    console.log('Sorted policies by start_date (ascending):', sortedPolicies);
     
     // Assign labels based on sorted order
     sortedPolicies.forEach((policy, index) => {
@@ -809,36 +837,26 @@ const App = () => {
       }
     });
     
-    console.log('Final sorted policies with labels:', sortedPolicies);
-    console.log('Final policies count:', sortedPolicies.length);
     
     return sortedPolicies; // Return single sorted array as source of truth
   };
 
   // Function to extract comparable parameters from policy data
   const extractComparableParameters = (policyData) => {
-    console.log('=== EXTRACTING PARAMETERS ===');
-    console.log('Input policyData:', policyData);
     
     if (!policyData) {
-      console.log('❌ No policy data provided');
       return null;
     }
     
     // Handle the API response structure: data.response.data
     const responseData = policyData.response?.data || policyData;
-    console.log('Response data after unwrapping:', responseData);
     
     const policyDetails = responseData.policy_and_coverage_details || {};
     const insuredDetails = responseData.insured_details || [];
     
-    console.log('📋 Policy details:', policyDetails);
-    console.log('👥 Insured details:', insuredDetails);
-    console.log('👤 Proposer details:', responseData.proposer_details);
     
     // Check policy type and extract appropriate values
     const isFloater = policyDetails.policy_type?.toLowerCase() === 'floater';
-    console.log('Policy type check:', { policy_type: policyDetails.policy_type, isFloater });
     
     let sumInsured = null;
     let cumulativeBonus = null;
@@ -907,12 +925,10 @@ const App = () => {
       parsedCumulativeBonus = cleanCumulativeBonus ? parseFloat(cleanCumulativeBonus) : null;
     }
     
-    console.log('💰 Raw values:', { sumInsured, cumulativeBonus });
     console.log('🧹 Cleaned values:', { 
       cleanSumInsured: String(sumInsured).replace(/[^\d.]/g, ''),
       cleanCumulativeBonus: String(cumulativeBonus).replace(/[^\d.]/g, '')
     });
-    console.log('🔢 Parsed values:', { parsedSumInsured, parsedCumulativeBonus });
     
     const params = {
       // Policy Timeline
@@ -965,17 +981,13 @@ const App = () => {
                      responseData.proposer_details?.proposer_name || 
                      'Not specified');
     
-    console.log('✅ Final params:', params);
-    console.log('=== END EXTRACTION ===');
     return params;
   };
 
   // Function to compare policies and generate insights
   const comparePolicies = (processedPolicies) => {
-    console.log('Comparing policies:', processedPolicies);
     
     if (processedPolicies.length < 2) {
-      console.log('Not enough policies to compare');
       return { comparisons: [], insights: [] };
     }
     
@@ -985,11 +997,9 @@ const App = () => {
       .map(p => ({ ...p, params: extractComparableParameters(p.data) }));
     
     if (policiesWithParams.length < 2) {
-      console.log('Not enough valid policies to compare');
       return { comparisons: [], insights: [] };
     }
     
-    console.log('Policies with valid parameters for comparison:', policiesWithParams.length);
     
     const comparisons = [];
     const rawInsights = [];
@@ -1000,10 +1010,8 @@ const App = () => {
       const current = policiesWithParams[i];
       const previous = policiesWithParams[i + 1];
       
-      console.log(`Comparing ${current.label} with ${previous.label}`);
       
       if (!current.params || !previous.params) {
-        console.log('Skipping comparison - missing parameters');
         continue;
       }
       
@@ -1272,11 +1280,6 @@ const App = () => {
     const totalRawInsights = rawInsights.length;
     const totalCappedInsights = finalInsights.length;
     
-    console.log('Generated comparisons:', comparisons);
-    console.log('Raw insights count:', totalRawInsights);
-    console.log('Final insights count (capped):', totalCappedInsights);
-    console.log('Policy insights:', policyInsights.length, '→', cappedPolicyInsights.length);
-    console.log('Member insights:', memberInsights.length, '→', cappedMemberInsights.length);
     
     return { comparisons, insights: finalInsights };
   };
@@ -1715,45 +1718,44 @@ const getSumInsuredFromData = (responseData) => {
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white shadow-sm border-b">
-          <div className="container mx-auto px-4 py-3">
+          <div className="container mx-auto px-4 py-6">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-6 w-48">
+              <div className="flex items-center space-x-6 w-56">
                 {/* Attributum Logo */}
                 <div className="flex items-center space-x-2">
                   <img 
                     src="/logos/attributum-logo.png" 
                     alt="Attributum Logo" 
-                    className="w-40 h-16 rounded-lg object-contain"
+                    className="w-50 h-20 rounded-lg object-contain"
                     onError={(e) => {
                       e.target.style.display = 'none';
                       e.target.nextElementSibling.style.display = 'flex';
                     }}
                   />
-                  <div className="w-40 h-16 bg-blue-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
-                    //                   <span className="text-white font-bold text-xl">A</span>
-  //                 </div>
-  //               </div>
-  //             </div>
-              
-              <div className="flex-1 text-center">
-                <h1 className="text-3xl font-bold text-gray-800">Insurance Automation Suite</h1>
-                <p className="text-sm text-gray-600 mt-1">Live Product Demos & Enterprise Sandbox</p>
-                <p className="text-xs text-gray-500 mt-1">Demo Environment</p>
+                  <div className="w-50 h-20 bg-blue-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                    <span className="text-white font-bold text-xl">A</span>
+                  </div>
+                </div>
               </div>
               
-              <div className="flex items-center justify-end space-x-6 w-48">
+              <div className="flex-1 text-center">
+                <h1 className="text-3xl font-bold text-gray-800">PIVOT Insurance Automation Suite</h1>
+                <p className="text-sm text-gray-600">Live Product Demos & Enterprise Sandbox</p>
+              </div>
+              
+              <div className="flex items-center justify-end space-x-6 w-56">
                 {/* PIVOT Logo */}
                 <div className="flex items-center space-x-2">
                   <img 
                     src="/logos/pivot-logo.png" 
                     alt="PIVOT Logo" 
-                    className="w-32 h-16 rounded-lg object-contain"
+                    className="w-40 h-20 rounded-lg object-contain"
                     onError={(e) => {
                       e.target.style.display = 'none';
                       e.target.nextElementSibling.style.display = 'flex';
                     }}
                   />
-                  <div className="w-32 h-16 bg-purple-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                  <div className="w-40 h-20 bg-purple-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
                     <span className="text-white font-bold text-xl">P</span>
                   </div>
                 </div>
@@ -1765,16 +1767,16 @@ const getSumInsuredFromData = (responseData) => {
         <section className="py-6 bg-gradient-to-br from-blue-50 to-purple-50">
           <div className="container mx-auto px-6">
             <div className="text-center mb-6">
-              <h2 className="text-3xl font-bold text-gray-800 mb-4">Transform Insurance Operations with AI</h2>
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Transform Insurance Operations with AI</h2>
               <p className="text-lg text-gray-600 max-w-3xl mx-auto">
-                Production-grade automation for insurers.
+                Production-grade automation for Insurance Carriers
               </p>
             </div>
           </div>
         </section>
 
-        <div className="text-center py-4">
-          <p className="text-sm text-gray-500">Trusted by insurers for policy automation.</p>
+        <div className="text-center py-2">
+          <p className="text-sm text-gray-500 font-bold">PIVOT Modules trusted by Carriers</p>
         </div>
 
         <section className="py-8">
@@ -1797,7 +1799,24 @@ const getSumInsuredFromData = (responseData) => {
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer">
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer border-2 border-blue-500"
+                   onClick={() => window.open('http://35.154.219.243:5173', '_blank')}>
+                <div className="p-6">
+                  <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mb-4">
+                    <i className="fas fa-file-contract text-orange-600 text-xl"></i>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-3">PIVOT Endorsements CoPilot</h3>
+                  <p className="text-gray-600 mb-4">
+                    Automated policy endorsements with built-in validation
+                  </p>
+                  <div className="flex items-center text-blue-600 font-medium">
+                    <span>Launch Endorsements Demo →</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer border-2 border-blue-500"
+                   onClick={() => setPage('underwriting')}>
                 <div className="p-6">
                   <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4">
                     <i className="fas fa-clipboard-check text-green-600 text-xl"></i>
@@ -1806,9 +1825,8 @@ const getSumInsuredFromData = (responseData) => {
                   <p className="text-gray-600 mb-4">
                     AI-assisted underwriting with automated risk assessment
                   </p>
-                  <div className="flex items-center text-green-600 font-medium">
-                    <span>Coming Soon</span>
-                    <i className="fas fa-lock ml-2"></i>
+                  <div className="flex items-center text-blue-600 font-medium">
+                    <span>Launch TeleMER Demo →</span>
                   </div>
                 </div>
               </div>
@@ -1823,22 +1841,6 @@ const getSumInsuredFromData = (responseData) => {
                     Automated insurance operations and workflows
                   </p>
                   <div className="flex items-center text-purple-600 font-medium">
-                    <span>Coming Soon</span>
-                    <i className="fas fa-lock ml-2"></i>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer">
-                <div className="p-6">
-                  <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mb-4">
-                    <i className="fas fa-file-contract text-orange-600 text-xl"></i>
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-800 mb-3">PIVOT Endorsements CoPilot</h3>
-                  <p className="text-gray-600 mb-4">
-                    Automated policy endorsements with built-in validation
-                  </p>
-                  <div className="flex items-center text-orange-600 font-medium">
                     <span>Coming Soon</span>
                     <i className="fas fa-lock ml-2"></i>
                   </div>
@@ -1868,6 +1870,174 @@ const getSumInsuredFromData = (responseData) => {
     );
   }
 
+  if (page === 'underwriting') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white shadow-sm border-b">
+          <div className="container mx-auto px-4 py-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-6 w-56">
+                <div className="flex items-center space-x-2">
+                  <img src="/logos/attributum-logo.png" alt="Attributum Logo" className="w-50 h-20 rounded-lg object-contain"
+                    onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }} />
+                  <div className="w-50 h-20 bg-blue-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                    <span className="text-white font-bold text-xl">A</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 text-center">
+                <h1 className="text-3xl font-bold text-gray-800">PIVOT Insurance Automation Suite</h1>
+                <p className="text-sm text-gray-600">Live Product Demos & Enterprise Sandbox</p>
+              </div>
+              <div className="flex items-center justify-end space-x-6 w-56">
+                <div className="flex items-center space-x-2">
+                  <img src="/logos/pivot-logo.png" alt="PIVOT Logo" className="w-40 h-20 rounded-lg object-contain"
+                    onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }} />
+                  <div className="w-40 h-20 bg-purple-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                    <span className="text-white font-bold text-xl">P</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="container mx-auto px-4 py-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex justify-between items-center mb-8">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-800">PIVOT Underwriting CoPilot (TeleMER)</h1>
+                <p className="text-xs text-gray-500 mt-1">AI-assisted underwriting with automated risk assessment</p>
+              </div>
+              <div className="space-x-4">
+                <button onClick={() => { setPage('home'); setUwResponseData(null); setUwFile(null); }}
+                  className="px-4 py-2 border border-gray-300 text-gray-600 rounded hover:bg-gray-50">
+                  ← Back to Home
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="space-y-4">
+                <div className="bg-white rounded-lg shadow-lg p-6">
+                  <h2 className="text-xl font-semibold mb-4">Upload Medical Document for Underwriting Analysis</h2>
+                  <form onSubmit={handleUwUpload}>
+                    <div>
+                      <input type="file" onChange={handleUwFileChange} className="w-full p-2 border rounded" accept=".pdf,.jpg,.jpeg,.png" />
+                      <p className="text-xs text-gray-500 mt-3 mb-4">Supported formats: PDF, JPG, JPEG, PNG</p>
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Insurance Company</label>
+                      <select
+                        value={uwCompany}
+                        onChange={(e) => setUwCompany(e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                      >
+                        <option value="telemer_hdfcergo">HDFC Ergo</option>
+                        <option value="telemer_starhealth">Star Health</option>
+                        <option value="telemer_icicilombard">ICICI Lombard</option>
+                        <option value="telemer_bajajallianz">Bajaj Allianz</option>
+                        <option value="telemer_maxbupa">Max Bupa / Niva</option>
+                        <option value="telemer_carehealth">Care Health</option>
+                      </select>
+                    </div>
+                      {uwFileError && (
+                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
+                          <p className="text-xs text-red-600">{uwFileError}</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex space-x-3">
+                      <button type="submit" disabled={!uwFile || uwLoading}
+                        className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex-1">
+                        {uwLoading ? 'Analysing...' : 'Analyse Document'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {uwResponseData && (
+                  <div className="bg-white rounded-lg shadow-lg p-6">
+                    <h3 className="text-xl font-semibold mb-4">Underwriting Analysis Summary</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="font-medium text-gray-800 mb-3">Proposer Details</h4>
+                        <div className="text-sm space-y-2">
+                          {uwResponseData?.response?.data?.proposer_details && Object.entries(uwResponseData.response.data.proposer_details).map(([key, value]) => (
+                            <div key={key} className="flex justify-between">
+                              <span className="text-gray-600 capitalize">{key.replace(/_/g, ' ')}:</span>
+                              <span className="font-medium">{String(value || 'Not Available')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-gray-800 mb-3">Policy & Coverage Details</h4>
+                        <div className="text-sm space-y-2">
+                          {uwResponseData?.response?.data?.policy_and_coverage_details && Object.entries(uwResponseData.response.data.policy_and_coverage_details).map(([key, value]) => (
+                            <div key={key} className="flex justify-between">
+                              <span className="text-gray-600 capitalize">{key.replace(/_/g, ' ')}:</span>
+                              <span className="font-medium text-right ml-4">{String(value || 'Not Available')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {uwResponseData?.response?.data?.insured_details && (
+                        <div>
+                          <h4 className="font-medium text-gray-800 mb-3">Insured Members</h4>
+                          <div className="text-xs overflow-x-auto">
+                            <table className="w-full border-collapse">
+                              <thead>
+                                <tr className="border-b bg-gray-50">
+                                  <th className="text-left py-2 px-2 font-medium text-gray-700">Name</th>
+                                  <th className="text-left py-2 px-2 font-medium text-gray-700">Relationship</th>
+                                  <th className="text-left py-2 px-2 font-medium text-gray-700">Gender</th>
+                                  <th className="text-left py-2 px-2 font-medium text-gray-700">DOB / Age</th>
+                                  <th className="text-left py-2 px-2 font-medium text-gray-700">PED</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {uwResponseData.response.data.insured_details.map((insured, index) => (
+                                  <tr key={index} className="border-b">
+                                    <td className="py-2 px-2 font-medium">{insured?.insured_name || 'N/A'}</td>
+                                    <td className="py-2 px-2">{insured?.relationship || 'N/A'}</td>
+                                    <td className="py-2 px-2">{insured?.gender || 'N/A'}</td>
+                                    <td className="py-2 px-2">{insured?.dob || insured?.age || 'N/A'}</td>
+                                    <td className="py-2 px-2">{insured?.declared_ped || 'None'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-white rounded-lg shadow-lg p-6">
+                  <h3 className="text-xl font-semibold mb-4">TeleMER Raw Response</h3>
+                  {!uwResponseData ? (
+                    <div className="text-center py-12">
+                      <i className="fas fa-clipboard-check text-4xl text-gray-300 mb-4"></i>
+                      <p className="text-gray-500">Upload a medical document to see AI-powered underwriting analysis</p>
+                      <p className="text-sm text-gray-400 mt-2">The system will extract and analyse medical information for underwriting decisions</p>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 rounded p-4 overflow-auto max-h-screen">
+                      <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(uwResponseData, null, 2)}</pre>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (page === 'config') {
     return <ScoreConfigPage setPage={setPage} />;
   }
@@ -1876,45 +2046,44 @@ const getSumInsuredFromData = (responseData) => {
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white shadow-sm border-b">
-          <div className="container mx-auto px-4 py-3">
+          <div className="container mx-auto px-4 py-6">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-6 w-48">
+              <div className="flex items-center space-x-6 w-56">
                 {/* Attributum Logo */}
                 <div className="flex items-center space-x-2">
                   <img 
                     src="/logos/attributum-logo.png" 
                     alt="Attributum Logo" 
-                    className="w-40 h-16 rounded-lg object-contain"
+                    className="w-50 h-20 rounded-lg object-contain"
                     onError={(e) => {
                       e.target.style.display = 'none';
                       e.target.nextElementSibling.style.display = 'flex';
                     }}
                   />
-                  <div className="w-40 h-16 bg-blue-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                  <div className="w-50 h-20 bg-blue-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
                     <span className="text-white font-bold text-xl">A</span>
                   </div>
                 </div>
               </div>
               
               <div className="flex-1 text-center">
-                <h1 className="text-3xl font-bold text-gray-800">Insurance Automation Suite</h1>
-                <p className="text-sm text-gray-600 mt-1">Live Product Demos & Enterprise Sandbox</p>
-                <p className="text-xs text-gray-500 mt-1">Demo Environment</p>
+                <h1 className="text-3xl font-bold text-gray-800">PIVOT Insurance Automation Suite</h1>
+                <p className="text-sm text-gray-600">Live Product Demos & Enterprise Sandbox</p>
               </div>
               
-              <div className="flex items-center justify-end space-x-6 w-48">
+              <div className="flex items-center justify-end space-x-6 w-56">
                 {/* PIVOT Logo */}
                 <div className="flex items-center space-x-2">
                   <img 
                     src="/logos/pivot-logo.png" 
                     alt="PIVOT Logo" 
-                    className="w-32 h-16 rounded-lg object-contain"
+                    className="w-40 h-20 rounded-lg object-contain"
                     onError={(e) => {
                       e.target.style.display = 'none';
                       e.target.nextElementSibling.style.display = 'flex';
                     }}
                   />
-                  <div className="w-32 h-16 bg-purple-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                  <div className="w-40 h-20 bg-purple-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
                     <span className="text-white font-bold text-xl">P</span>
                   </div>
                 </div>
@@ -1958,7 +2127,7 @@ const getSumInsuredFromData = (responseData) => {
                         className="w-full p-2 border rounded"
                         accept=".pdf,.jpg,.jpeg,.png"
                       />
-                      <p className="text-xs text-gray-500 mt-1">Supported formats: PDF, JPG, JPEG, PNG</p>
+                      <p className="text-xs text-gray-500 mt-3 mb-4">Supported formats: PDF, JPG, JPEG, PNG</p>
                       {fileError && (
                         <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
                           <p className="text-xs text-red-600">{fileError}</p>
@@ -1976,14 +2145,11 @@ const getSumInsuredFromData = (responseData) => {
                         {loading ? 'Processing...' : 'Analyse Policy'}
                       </button>
                       
-                      {/* Multi-Year Analysis CTA - Only show after analysis completed */}
+                      {/* Multi-Year Analysis Info - Only show after analysis completed */}
                       {analysisCompleted && (
-                        <button
-                          onClick={() => alert('Multi-Year Policy Analysis – coming next')}
-                          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                        >
-                          Start Multi-Year Policy Analysis
-                        </button>
+                        <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-800">
+                          You can now compare and analyse older policies of the same family / insured to identify coverage changes, sum insured movement, cumulative bonus shifts, and continuity gaps. Please click on Multi Year policy analysis below.
+                        </div>
                       )}
                     </div>
                   </form>
@@ -1998,31 +2164,31 @@ const getSumInsuredFromData = (responseData) => {
                         <div className="text-sm space-y-2">
                           <div className="flex justify-between">
                             <span className="text-gray-600">Insurer Name:</span>
-                            <span className="font-medium">
+                            <span className="font-medium" style={dataBlue}>
                               {responseData?.response?.data?.policy_and_coverage_details?.optional_coverage_5 || 'Not Available'}
                             </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">Policy Type:</span>
-                            <span className="font-medium">
+                            <span className="font-medium" style={dataBlue}>
                               {responseData?.response?.data?.policy_and_coverage_details?.policy_type || 'Not Available'}
                             </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">Policy Period:</span>
-                            <span className="font-medium">
+                            <span className="font-medium" style={dataBlue}>
                               {responseData?.response?.data?.policy_and_coverage_details?.policy_start_date || 'Missing'} → {responseData?.response?.data?.policy_and_coverage_details?.policy_end_date || 'Missing'}
                             </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">Product:</span>
-                            <span className="font-medium">
+                            <span className="font-medium" style={dataBlue}>
                               {responseData?.response?.data?.policy_and_coverage_details?.policy_product_name || 'Not Available'}
                             </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">Policy Number:</span>
-                            <span className="font-medium">
+                            <span className="font-medium" style={dataBlue}>
                               {responseData?.response?.data?.policy_and_coverage_details?.policy_number || 'Missing'}
                             </span>
                           </div>
@@ -2049,32 +2215,32 @@ const getSumInsuredFromData = (responseData) => {
                               <tbody>
                                 {responseData?.response?.data?.insured_details?.map((insured, index) => (
                                   <tr key={index} className="border-b">
-                                    <td className="py-1 px-1 font-medium">
+                                    <td className="py-1 px-1 font-medium" style={dataBlue}>
                                       {insured?.insured_name || 'Missing'}
                                     </td>
-                                    <td className="py-1 px-1">
+                                    <td className="py-1 px-1" style={dataBlue}>
                                       {insured?.relationship || 'Not Available'}
                                     </td>
-                                    <td className="py-1 px-1">
+                                    <td className="py-1 px-1" style={dataBlue}>
                                       {insured?.gender || 'Not Available'}
                                     </td>
-                                    <td className="py-1 px-1">
+                                    <td className="py-1 px-1" style={dataBlue}>
                                       {insured?.age || (
                                         insured?.dob 
                                           ? new Date().getFullYear() - new Date(insured.dob).getFullYear()
                                           : 'Missing'
                                       )}
                                     </td>
-                                    <td className="py-1 px-1">
+                                    <td className="py-1 px-1" style={dataBlue}>
                                       {insured?.declared_ped || 'Not Declared'}
                                     </td>
-                                    <td className="py-1 px-1">
+                                    <td className="py-1 px-1" style={dataBlue}>
                                       {insured?.first_policy_started || 'Not Available'}
                                     </td>
-                                    <td className="py-1 px-1">
+                                    <td className="py-1 px-1" style={dataBlue}>
                                       {insured?.individual_policy_sum_insured || 'Not Available'}
                                     </td>
-                                    <td className="py-1 px-1">
+                                    <td className="py-1 px-1" style={dataBlue}>
                                       {insured?.individual_policy_cumulative_bonus || 'Not Available'}
                                     </td>
                                   </tr>
@@ -2090,19 +2256,19 @@ const getSumInsuredFromData = (responseData) => {
                         <div className="text-sm space-y-2">
                           <div className="flex justify-between">
                             <span className="text-gray-600">Floater Sum Insured:</span>
-                            <span className="font-medium">
+                            <span className="font-medium" style={dataBlue}>
                               {responseData?.response?.data?.policy_and_coverage_details?.floater_basic_sum_insured || 'Missing'}
                             </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">Floater Cumulative Bonus:</span>
-                            <span className="font-medium">
+                            <span className="font-medium" style={dataBlue}>
                               {responseData?.response?.data?.policy_and_coverage_details?.floater_cumulative_bonus || 'Not Available'}
                             </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">No. of Members:</span>
-                            <span className="font-medium">
+                            <span className="font-medium" style={dataBlue}>
                               {responseData?.response?.data?.insured_details?.length || 0}
                             </span>
                           </div>
@@ -2114,19 +2280,19 @@ const getSumInsuredFromData = (responseData) => {
                         <div className="text-sm space-y-2">
                           <div className="flex justify-between">
                             <span className="text-gray-600">Cumulative Bonus:</span>
-                            <span className="font-medium">
+                            <span className="font-medium" style={dataBlue}>
                               {responseData?.response?.data?.policy_and_coverage_details?.floater_cumulative_bonus || 'Not Available'}
                             </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">PED Declaration:</span>
-                            <span className="font-medium">
+                            <span className="font-medium" style={dataBlue}>
                               {responseData?.response?.data?.insured_details?.[0]?.declared_ped || 'Not Available'}
                             </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">Previous Claims:</span>
-                            <span className="font-medium">
+                            <span className="font-medium" style={dataBlue}>
                               {responseData?.response?.data?.policy_and_coverage_details?.previous_claims || 'Not Available'}
                             </span>
                           </div>
@@ -2548,7 +2714,7 @@ const getSumInsuredFromData = (responseData) => {
                                 {policy.hasValidDates ? (
                                   <div className="text-sm text-gray-700">
                                     <div className="mb-1">
-                                      <span className="font-medium">Coverage: </span>
+                                      <span className="font-medium" style={dataBlue}>Coverage: </span>
                                       {policy.startDate} → {policy.endDate}
                                     </div>
                                     {policy.duration && policy.duration.totalMonths > 12 && (
@@ -2675,16 +2841,11 @@ const getSumInsuredFromData = (responseData) => {
                         const { comparisons, insights } = comparePolicies(processedPolicies);
                         
                         // Only show comparison if we have at least 2 policies with valid data
-                        console.log('=== COMPARISON SECTION ===');
                         
                         // Use single sortedPolicies[] source of truth from processPolicies
-                        console.log('📋 Sorted policies (single source of truth):', processedPolicies);
-                        console.log('📋 Sorted policies count:', processedPolicies.length);
                         
                         // Show all processed policies - never discard extracted policies
                         const policiesForDisplay = processedPolicies.filter(p => p.processed);
-                        console.log('📋 Policies for display (all processed):', policiesForDisplay);
-                        console.log('📋 Policies for display count:', policiesForDisplay.length);
                         
                         // Log each policy's status
                         processedPolicies.forEach((policy, index) => {
@@ -2700,13 +2861,10 @@ const getSumInsuredFromData = (responseData) => {
                         // At least 2 valid policies must trigger comparison
                         // Valid policies = processed policies with data and valid dates
                         const policiesWithValidData = processedPolicies.filter(p => p.processed && p.data && p.hasValidDates);
-                        console.log('📊 Policies with valid data for comparison:', policiesWithValidData.length);
                         
                         // Show comparison if we have at least 2 valid policies, but display all processed policies
                         const shouldShowComparison = policiesWithValidData.length >= 2;
-                        console.log('🔍 Should show comparison:', shouldShowComparison);
                         
-                        console.log('=== END COMPARISON SECTION ===');
                         
                         if (!shouldShowComparison) return null;
                         
@@ -2732,7 +2890,7 @@ const getSumInsuredFromData = (responseData) => {
                                   <tr>
                                     <td className="p-3 font-medium text-gray-600">Policy Period</td>
                                     {policiesForDisplay.map((policy, index) => (
-                                      <td key={index} className="p-3 text-gray-900">
+                                      <td key={index} className="p-3" style={dataBlue}>
                                         {policy.startDate && policy.endDate ? `${policy.startDate} → ${policy.endDate}` : 'Date Incomplete'}
                                       </td>
                                     ))}
@@ -2740,13 +2898,13 @@ const getSumInsuredFromData = (responseData) => {
                                   
                                   {/* Individual Sum Insured */}
                                   <tr>
-                                    <td className="p-3 font-medium text-gray-600">Individual Sum Insured</td>
+                                    <td className="p-3 font-medium text-gray-600">Sum Insured</td>
                                     {policiesForDisplay.map((policy, index) => {
                                       const params = extractComparableParameters(policy.data);
                                       const isFloater = params.is_floater;
                                       
                                       return (
-                                        <td key={index} className="p-3 text-gray-900">
+                                        <td key={index} className="p-3" style={dataBlue}>
                                           {isFloater ? (
                                             // Floater: Show "Floater Policy" (no individual SI in main table)
                                             <span className="text-gray-500 italic">Floater Policy</span>
@@ -2779,10 +2937,8 @@ const getSumInsuredFromData = (responseData) => {
                                               originalValue : 
                                               'Not specified'
                                           ) : (
-                                            // Individual: Show the actual individual_policy_cumulative_bonus value
-                                            originalValue !== null && originalValue !== undefined ? 
-                                              originalValue : 
-                                              'Not specified'
+                                            // Individual: Show "Member level"
+                                            <span className="text-gray-500 italic">Member level</span>
                                           )}
                                           {isReset && isFloater && (
                                             <div className="text-xs text-red-600 mt-1">
@@ -2822,7 +2978,7 @@ const getSumInsuredFromData = (responseData) => {
                                     {policiesForDisplay.map((policy, index) => {
                                       const params = extractComparableParameters(policy.data);
                                       return (
-                                        <td key={index} className="p-3 text-gray-900">
+                                        <td key={index} className="p-3" style={dataBlue}>
                                           {params.policy_type || 'Not specified'}
                                         </td>
                                       );
@@ -2844,7 +3000,7 @@ const getSumInsuredFromData = (responseData) => {
                                       const proposerDiffers = uniqueProposers.length > 1;
                                       
                                       return (
-                                        <td key={index} className="p-3 text-gray-900">
+                                        <td key={index} className="p-3" style={dataBlue}>
                                           <div className="flex items-center space-x-2">
                                             <span>{proposerName}</span>
                                             {proposerDiffers && (
@@ -2895,11 +3051,11 @@ const getSumInsuredFromData = (responseData) => {
                                           
                                           // Individual policy - show member details
                                           return (
-                                            <td key={index} className="p-3 text-gray-900">
+                                            <td key={index} className="p-3" style={dataBlue}>
                                               <div className="text-xs space-y-1">
                                                 {params.members.map((member, memberIndex) => (
                                                   <div key={memberIndex} className="border-b border-gray-100 pb-1">
-                                                    <div className="font-medium">{member.name}</div>
+                                                    <div className="font-medium" style={dataBlue}>{member.name}</div>
                                                     <div className="text-gray-600">
                                                       SI: {params.is_floater ? 
                                                             'Not applicable (Floater Policy)' : 
@@ -2954,7 +3110,7 @@ const getSumInsuredFromData = (responseData) => {
                                       {/* Expandable Header */}
                                       <button
                                         onClick={() => toggleMembersExpansion(policyIndex)}
-                                        className="w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between text-left"
+                                        className="w-full px-4 py-6 bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between text-left"
                                       >
                                         <h6 className="text-sm font-medium text-gray-700">{policy.label}</h6>
                                         <div className="flex items-center space-x-2">
@@ -3000,8 +3156,8 @@ const getSumInsuredFromData = (responseData) => {
                                                   return (
                                                     <tr key={memberIndex}>
                                                       <td className="p-3 text-gray-900 font-medium">{member.name}</td>
-                                                      <td className="p-3 text-gray-900">{member.relationship || 'Not specified'}</td>
-                                                      <td className="p-3 text-gray-900">
+                                                      <td className="p-3" style={dataBlue}>{member.relationship || 'Not specified'}</td>
+                                                      <td className="p-3" style={dataBlue}>
                                                         {member.date_of_birth && member.age ? 
                                                           `${member.date_of_birth} (${member.age} years)` : 
                                                           member.date_of_birth ? `${member.date_of_birth} (Age not available)` :
@@ -3009,7 +3165,7 @@ const getSumInsuredFromData = (responseData) => {
                                                           'Not specified'
                                                         }
                                                       </td>
-                                                      <td className="p-3 text-gray-900">
+                                                      <td className="p-3" style={dataBlue}>
                                                         {params.is_floater ? 
                                                           'Not applicable (Floater Policy)' : 
                                                           member.original_individual_sum_insured ? 

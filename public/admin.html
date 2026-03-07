@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIVOT Admin Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f1f5f9;
+            color: #1e293b;
+            min-height: 100vh;
+        }
+
+        /* Top bar */
+        .topbar {
+            background: linear-gradient(135deg, #0f172a, #1e3a8a);
+            color: #fff;
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+        }
+        .topbar-left { display: flex; align-items: center; gap: 12px; }
+        .topbar-left img { max-height: 36px; background: #fff; border-radius: 6px; padding: 4px 8px; }
+        .topbar h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
+        .topbar-right { display: flex; align-items: center; gap: 16px; font-size: 13px; }
+        .topbar-right a { color: #93c5fd; text-decoration: none; font-weight: 500; }
+        .topbar-right a:hover { color: #fff; }
+
+        /* Tab navigation */
+        .tabs {
+            background: #fff;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 0 32px;
+            display: flex;
+            gap: 0;
+        }
+        .tab {
+            padding: 14px 24px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #64748b;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        .tab:hover { color: #1e40af; background: #f8fafc; }
+        .tab.active { color: #1e40af; border-bottom-color: #1e40af; }
+
+        /* Content area */
+        .content { padding: 24px 32px; max-width: 1200px; margin: 0 auto; }
+
+        /* Cards */
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            border: 1px solid #e2e8f0;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .card-header h2 { font-size: 15px; font-weight: 700; color: #1e293b; }
+        .card-body { padding: 20px; }
+
+        /* Stats row */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        }
+        .stat-label { font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-value { font-size: 28px; font-weight: 700; color: #1e293b; margin-top: 4px; }
+        .stat-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 14px; border-bottom: 2px solid #e2e8f0; }
+        td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+        tr:hover td { background: #f8fafc; }
+
+        /* Badges */
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+        .badge-admin { background: #fef3c7; color: #92400e; }
+        .badge-client { background: #dbeafe; color: #1e40af; }
+        .badge-active { background: #dcfce7; color: #166534; }
+        .badge-inactive { background: #fee2e2; color: #991b1b; }
+        .badge-expired { background: #fef3c7; color: #92400e; }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.15s;
+        }
+        .btn-primary { background: #1e40af; color: #fff; }
+        .btn-primary:hover { background: #1e3a8a; }
+        .btn-secondary { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+        .btn-secondary:hover { background: #e2e8f0; }
+        .btn-danger { background: #fee2e2; color: #991b1b; }
+        .btn-danger:hover { background: #fecaca; }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+        /* Forms */
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group label { font-size: 12px; font-weight: 600; color: #475569; }
+        .form-group input, .form-group select {
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus, .form-group select:focus { border-color: #3b82f6; }
+        .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+        .checkbox-row label { font-size: 13px; color: #475569; cursor: pointer; }
+        .checkbox-row input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+
+        /* Modal overlay */
+        .modal-overlay {
+            display: none;
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.3);
+            width: 520px;
+            max-width: 90vw;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            padding: 18px 24px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .modal-header h3 { font-size: 16px; font-weight: 700; }
+        .modal-close { background: none; border: none; font-size: 18px; color: #94a3b8; cursor: pointer; padding: 4px 8px; }
+        .modal-close:hover { color: #1e293b; }
+        .modal-body { padding: 24px; }
+        .modal-footer { padding: 16px 24px; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 10px; }
+
+        /* Toast notifications */
+        .toast {
+            position: fixed; top: 20px; right: 20px; z-index: 200;
+            padding: 14px 20px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 500;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            display: none;
+            animation: slideIn 0.3s ease-out;
+        }
+        .toast.show { display: block; }
+        .toast-success { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+        .toast-error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+        @keyframes slideIn { from { transform: translateX(60px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        /* Tab panel visibility */
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+
+        /* Log filters */
+        .filters { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+        .filters select, .filters input {
+            padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .content { padding: 16px; }
+            .form-row { grid-template-columns: 1fr; }
+            .stats-row { grid-template-columns: 1fr 1fr; }
+            .topbar { padding: 12px 16px; }
+            .tabs { padding: 0 16px; overflow-x: auto; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Top Bar -->
+    <div class="topbar">
+        <div class="topbar-left">
+            <img src="/logos/pivot-logo.png" alt="PIVOT" onerror="this.style.display='none'">
+            <h1>Admin Dashboard</h1>
+        </div>
+        <div class="topbar-right">
+            <span id="adminName"></span>
+            <a href="/">← Back to Dashboard</a>
+            <a href="#" onclick="doLogout()">Logout</a>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+        <div class="tab active" data-tab="overview" onclick="switchTab('overview')">
+            <i class="fas fa-chart-bar"></i> Overview
+        </div>
+        <div class="tab" data-tab="clients" onclick="switchTab('clients')">
+            <i class="fas fa-users"></i> Clients
+        </div>
+        <div class="tab" data-tab="logs" onclick="switchTab('logs')">
+            <i class="fas fa-list"></i> Event Log
+        </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+
+        <!-- OVERVIEW TAB -->
+        <div class="tab-panel active" id="panel-overview">
+            <div class="stats-row" id="statsRow">
+                <div class="stat-card">
+                    <div class="stat-label">Total API Calls</div>
+                    <div class="stat-value" id="statTotalCalls">—</div>
+                    <div class="stat-sub">All clients, all time</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Active Clients</div>
+                    <div class="stat-value" id="statActiveClients">—</div>
+                    <div class="stat-sub">With at least 1 call</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Calls Today</div>
+                    <div class="stat-value" id="statToday">—</div>
+                    <div class="stat-sub" id="statTodayDate"></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total Clients</div>
+                    <div class="stat-value" id="statTotalClients">—</div>
+                    <div class="stat-sub">Registered accounts</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2>Usage by Client</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="exportCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+                <div class="card-body" style="padding:0; overflow-x:auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Client</th>
+                                <th>Role</th>
+                                <th>Total Calls</th>
+                                <th>Modules Used</th>
+                                <th>Last Active</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usageTableBody">
+                            <tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:40px;">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- CLIENTS TAB -->
+        <div class="tab-panel" id="panel-clients">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Client Accounts</h2>
+                    <button class="btn btn-primary btn-sm" onclick="showAddClientModal()">
+                        <i class="fas fa-plus"></i> Add Client
+                    </button>
+                </div>
+                <div class="card-body" style="padding:0; overflow-x:auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Client Name</th>
+                                <th>Access Code</th>
+                                <th>Role</th>
+                                <th>Modules</th>
+                                <th>Rate Limit</th>
+                                <th>Expiry</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="clientsTableBody">
+                            <tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:40px;">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- EVENT LOG TAB -->
+        <div class="tab-panel" id="panel-logs">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Event Log</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="exportCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="filters">
+                        <select id="filterType" onchange="loadLogs()">
+                            <option value="">All Events</option>
+                            <option value="api_call">API Calls</option>
+                            <option value="login">Logins</option>
+                            <option value="login_failed">Failed Logins</option>
+                            <option value="logout">Logouts</option>
+                            <option value="module_blocked">Module Blocked</option>
+                        </select>
+                        <select id="filterClient" onchange="loadLogs()">
+                            <option value="">All Clients</option>
+                        </select>
+                        <input type="number" id="filterLimit" value="100" style="width:80px;" onchange="loadLogs()">
+                        <span style="font-size:12px;color:#94a3b8;">entries</span>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Event</th>
+                                    <th>Client</th>
+                                    <th>Module</th>
+                                    <th>Endpoint</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logsTableBody">
+                                <tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:40px;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Client Modal -->
+    <div class="modal-overlay" id="clientModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modalTitle">Add New Client</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editClientId">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Client Name *</label>
+                        <input type="text" id="fClientName" placeholder="e.g. Acme Insurance Corp">
+                    </div>
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select id="fRole">
+                            <option value="client">Client</option>
+                            <option value="super_admin">Super Admin</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Monthly Rate Limit</label>
+                        <input type="number" id="fRateLimit" value="100" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Expiry Date</label>
+                        <input type="date" id="fExpiry">
+                    </div>
+                </div>
+                <div style="margin-bottom:10px; font-size:12px; font-weight:600; color:#475569;">Allowed Modules</div>
+                <div class="checkbox-row">
+                    <input type="checkbox" id="modPortability" checked>
+                    <label for="modPortability">Portability</label>
+                </div>
+                <div class="checkbox-row">
+                    <input type="checkbox" id="modEndorsements">
+                    <label for="modEndorsements">Endorsements</label>
+                </div>
+                <div class="checkbox-row">
+                    <input type="checkbox" id="modTelemer">
+                    <label for="modTelemer">Underwriting (TeleMER)</label>
+                </div>
+                <div class="checkbox-row">
+                    <input type="checkbox" id="modOperations">
+                    <label for="modOperations">Operations</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-primary" id="modalSaveBtn" onclick="saveClient()">
+                    <i class="fas fa-save"></i> Create Client
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+    // ─── State ────────────────────────────────────────
+    let currentTab = 'overview';
+
+    // ─── Init ─────────────────────────────────────────
+    async function init() {
+        // Check we're admin
+        try {
+            const res = await fetch('/api/auth/permissions');
+            const data = await res.json();
+            if (data.role !== 'super_admin') {
+                document.body.innerHTML = '<div style="padding:60px;text-align:center;"><h2>Access Denied</h2><p>Admin access required.</p><a href="/">Back to Dashboard</a></div>';
+                return;
+            }
+            document.getElementById('adminName').textContent = data.client_name;
+        } catch {
+            window.location.href = '/login';
+            return;
+        }
+
+        loadOverview();
+        loadClients();
+        loadLogs();
+
+        // Set default expiry to 6 months from now
+        const d = new Date();
+        d.setMonth(d.getMonth() + 6);
+        document.getElementById('fExpiry').value = d.toISOString().split('T')[0];
+    }
+
+    // ─── Tab Switching ────────────────────────────────
+    function switchTab(tab) {
+        currentTab = tab;
+        document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + tab));
+    }
+
+    // ─── Overview ─────────────────────────────────────
+    async function loadOverview() {
+        try {
+            const [summaryRes, clientsRes, logsRes] = await Promise.all([
+                fetch('/api/admin/usage/summary'),
+                fetch('/api/admin/clients'),
+                fetch('/api/admin/usage?event_type=api_call&from_date=' + new Date().toISOString().split('T')[0])
+            ]);
+            const summary = await summaryRes.json();
+            const clients = await clientsRes.json();
+            const todayLogs = await logsRes.json();
+
+            // Stats
+            const totalCalls = summary.reduce((sum, c) => sum + c.total_calls, 0);
+            const activeClients = summary.filter(c => c.total_calls > 0).length;
+
+            document.getElementById('statTotalCalls').textContent = totalCalls.toLocaleString();
+            document.getElementById('statActiveClients').textContent = activeClients;
+            document.getElementById('statToday').textContent = todayLogs.length.toLocaleString();
+            document.getElementById('statTodayDate').textContent = new Date().toLocaleDateString();
+            document.getElementById('statTotalClients').textContent = clients.length;
+
+            // Usage table
+            const tbody = document.getElementById('usageTableBody');
+            if (summary.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:40px;">No API calls recorded yet</td></tr>';
+                return;
+            }
+            tbody.innerHTML = summary.map(c => `
+                <tr>
+                    <td><strong>${esc(c.client_name)}</strong><br><span style="font-size:11px;color:#94a3b8;">${esc(c.client_id)}</span></td>
+                    <td><span class="badge ${c.role === 'super_admin' ? 'badge-admin' : 'badge-client'}">${c.role === 'super_admin' ? 'Admin' : 'Client'}</span></td>
+                    <td><strong>${c.total_calls}</strong></td>
+                    <td>${Object.entries(c.calls_by_module).map(([m,n]) => `${m}: ${n}`).join(', ') || '—'}</td>
+                    <td style="font-size:12px;color:#64748b;">${formatDate(c.last_active)}</td>
+                </tr>
+            `).join('');
+        } catch (err) {
+            console.error('Failed to load overview:', err);
+        }
+    }
+
+    // ─── Clients ──────────────────────────────────────
+    async function loadClients() {
+        try {
+            const res = await fetch('/api/admin/clients');
+            const clients = await res.json();
+
+            // Populate filter dropdown
+            const filterSelect = document.getElementById('filterClient');
+            const current = filterSelect.value;
+            filterSelect.innerHTML = '<option value="">All Clients</option>' +
+                clients.map(c => `<option value="${esc(c.client_id)}">${esc(c.client_name)}</option>`).join('');
+            filterSelect.value = current;
+
+            const tbody = document.getElementById('clientsTableBody');
+            tbody.innerHTML = clients.map(c => {
+                const expired = new Date(c.expiry_date) < new Date();
+                const statusBadge = !c.active
+                    ? '<span class="badge badge-inactive">Inactive</span>'
+                    : expired
+                        ? '<span class="badge badge-expired">Expired</span>'
+                        : '<span class="badge badge-active">Active</span>';
+                return `
+                <tr>
+                    <td><strong>${esc(c.client_name)}</strong><br><span style="font-size:11px;color:#94a3b8;">${esc(c.client_id)}</span></td>
+                    <td style="font-family:monospace;font-size:12px;letter-spacing:1px;">${esc(c.access_code)}</td>
+                    <td><span class="badge ${c.role === 'super_admin' ? 'badge-admin' : 'badge-client'}">${c.role === 'super_admin' ? 'Admin' : 'Client'}</span></td>
+                    <td style="font-size:12px;">${c.allowed_modules.join(', ')}</td>
+                    <td>${c.rate_limit.toLocaleString()}/mo</td>
+                    <td style="font-size:12px;">${c.expiry_date}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <button class="btn btn-secondary btn-sm" onclick='editClient(${JSON.stringify(c)})' title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        ${c.role !== 'super_admin' ? `
+                        <button class="btn btn-danger btn-sm" onclick="toggleClient('${esc(c.client_id)}', ${!c.active})" title="${c.active ? 'Deactivate' : 'Activate'}">
+                            <i class="fas fa-${c.active ? 'ban' : 'check'}"></i>
+                        </button>` : ''}
+                    </td>
+                </tr>`;
+            }).join('');
+        } catch (err) {
+            console.error('Failed to load clients:', err);
+        }
+    }
+
+    // ─── Event Logs ───────────────────────────────────
+    async function loadLogs() {
+        try {
+            const type = document.getElementById('filterType').value;
+            const client = document.getElementById('filterClient').value;
+            const limit = document.getElementById('filterLimit').value || 100;
+
+            let url = `/api/admin/usage?limit=${limit}`;
+            if (type)   url += `&event_type=${type}`;
+            if (client) url += `&client_id=${client}`;
+
+            const res = await fetch(url);
+            const logs = await res.json();
+
+            const tbody = document.getElementById('logsTableBody');
+            if (logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:40px;">No events found</td></tr>';
+                return;
+            }
+
+            const eventColors = {
+                api_call: '#dbeafe', login: '#dcfce7', login_failed: '#fee2e2',
+                logout: '#f1f5f9', module_blocked: '#fef3c7'
+            };
+
+            tbody.innerHTML = logs.map(e => `
+                <tr>
+                    <td style="font-size:12px;white-space:nowrap;">${formatDate(e.timestamp)}</td>
+                    <td><span style="background:${eventColors[e.event_type] || '#f1f5f9'};padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">${e.event_type}</span></td>
+                    <td style="font-size:12px;">${esc(e.client_name || '—')}</td>
+                    <td style="font-size:12px;">${esc(e.module || '—')}</td>
+                    <td style="font-size:12px;font-family:monospace;">${esc(e.endpoint || '—')}</td>
+                    <td style="font-size:12px;">${e.status_code || '—'}</td>
+                </tr>
+            `).join('');
+        } catch (err) {
+            console.error('Failed to load logs:', err);
+        }
+    }
+
+    // ─── Add/Edit Client ──────────────────────────────
+    function showAddClientModal() {
+        document.getElementById('modalTitle').textContent = 'Add New Client';
+        document.getElementById('modalSaveBtn').innerHTML = '<i class="fas fa-save"></i> Create Client';
+        document.getElementById('editClientId').value = '';
+        document.getElementById('fClientName').value = '';
+        document.getElementById('fRole').value = 'client';
+        document.getElementById('fRateLimit').value = '100';
+        const d = new Date(); d.setMonth(d.getMonth() + 6);
+        document.getElementById('fExpiry').value = d.toISOString().split('T')[0];
+        document.getElementById('modPortability').checked = true;
+        document.getElementById('modEndorsements').checked = false;
+        document.getElementById('modTelemer').checked = false;
+        document.getElementById('modOperations').checked = false;
+        document.getElementById('clientModal').classList.add('show');
+    }
+
+    function editClient(c) {
+        document.getElementById('modalTitle').textContent = 'Edit Client';
+        document.getElementById('modalSaveBtn').innerHTML = '<i class="fas fa-save"></i> Save Changes';
+        document.getElementById('editClientId').value = c.client_id;
+        document.getElementById('fClientName').value = c.client_name;
+        document.getElementById('fRole').value = c.role;
+        document.getElementById('fRateLimit').value = c.rate_limit;
+        document.getElementById('fExpiry').value = c.expiry_date;
+        document.getElementById('modPortability').checked = c.allowed_modules.includes('portability');
+        document.getElementById('modEndorsements').checked = c.allowed_modules.includes('endorsements');
+        document.getElementById('modTelemer').checked = c.allowed_modules.includes('telemer');
+        document.getElementById('modOperations').checked = c.allowed_modules.includes('operations');
+        document.getElementById('clientModal').classList.add('show');
+    }
+
+    function closeModal() {
+        document.getElementById('clientModal').classList.remove('show');
+    }
+
+    async function saveClient() {
+        const editId = document.getElementById('editClientId').value;
+        const name = document.getElementById('fClientName').value.trim();
+        if (!name) { toast('Client name is required', 'error'); return; }
+
+        const modules = [];
+        if (document.getElementById('modPortability').checked) modules.push('portability');
+        if (document.getElementById('modEndorsements').checked) modules.push('endorsements');
+        if (document.getElementById('modTelemer').checked) modules.push('telemer');
+        if (document.getElementById('modOperations').checked) modules.push('operations');
+
+        const payload = {
+            client_name: name,
+            role: document.getElementById('fRole').value,
+            rate_limit: parseInt(document.getElementById('fRateLimit').value) || 100,
+            expiry_date: document.getElementById('fExpiry').value,
+            allowed_modules: modules
+        };
+
+        try {
+            let res;
+            if (editId) {
+                res = await fetch(`/api/admin/clients/${editId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            } else {
+                res = await fetch('/api/admin/clients', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            }
+
+            const data = await res.json();
+            if (data.success) {
+                closeModal();
+                toast(editId ? 'Client updated' : `Client created. Access code: ${data.access_code}`, 'success');
+                loadClients();
+                loadOverview();
+            } else {
+                toast(data.error || 'Failed to save', 'error');
+            }
+        } catch (err) {
+            toast('Network error', 'error');
+        }
+    }
+
+    async function toggleClient(clientId, active) {
+        const action = active ? 'activate' : 'deactivate';
+        if (!confirm(`Are you sure you want to ${action} this client?`)) return;
+
+        try {
+            const res = await fetch(`/api/admin/clients/${clientId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ active })
+            });
+            const data = await res.json();
+            if (data.success) {
+                toast(`Client ${action}d`, 'success');
+                loadClients();
+            } else {
+                toast(data.error || 'Failed', 'error');
+            }
+        } catch { toast('Network error', 'error'); }
+    }
+
+    // ─── CSV Export ───────────────────────────────────
+    async function exportCSV() {
+        try {
+            const res = await fetch('/api/admin/usage/export');
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `pivot-usage-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            toast('CSV exported', 'success');
+        } catch { toast('Export failed', 'error'); }
+    }
+
+    // ─── Logout ───────────────────────────────────────
+    async function doLogout() {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        window.location.href = '/login';
+    }
+
+    // ─── Helpers ──────────────────────────────────────
+    function esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+    function formatDate(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function toast(msg, type) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = `toast show toast-${type || 'success'}`;
+        setTimeout(() => t.classList.remove('show'), 4000);
+    }
+
+    // Boot
+    init();
+    </script>
+</body>
+</html>

@@ -4,100 +4,357 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PIVOT Automation Suite - Login</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
-        .gradient-bg {
-            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #06b6d4 100%);
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 40%, #1d4ed8 70%, #0891b2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
         }
-        .glass-card {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
+
+        .card {
+            background: rgba(255, 255, 255, 0.97);
+            border-radius: 20px;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08);
+            overflow: hidden;
+            animation: fadeIn 0.6s ease-out;
         }
-        .input-focus:focus {
+
+        .accent-bar {
+            height: 4px;
+            background: linear-gradient(90deg, #1e3a8a, #3b82f6, #06b6d4);
+        }
+
+        .card-inner {
+            padding: 40px 36px 32px;
+        }
+
+        /* Logo section */
+        .logo-section {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .logos-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .logos-row img {
+            max-height: 44px;
+            max-width: 160px;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            display: block;
+        }
+
+        .logo-divider {
+            width: 1px;
+            height: 30px;
+            background: #e2e8f0;
+        }
+
+        .title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #1e293b;
+            letter-spacing: 0.5px;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: #94a3b8;
+            margin-top: 6px;
+            font-weight: 500;
+        }
+
+        /* Form */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #64748b;
+            margin-bottom: 8px;
+        }
+
+        .form-label i {
+            color: #3b82f6;
+            margin-right: 6px;
+            font-size: 11px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 15px;
+            font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+            text-align: center;
+            letter-spacing: 3px;
+            color: #1e293b;
+            background: #f8fafc;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .form-input::placeholder {
+            color: #cbd5e1;
+            letter-spacing: 1px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+        }
+
+        .form-input:focus {
             border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+            background: #fff;
         }
+
+        /* Messages */
+        .msg-box {
+            display: none;
+            margin-bottom: 16px;
+            padding: 14px;
+            border-radius: 12px;
+            text-align: center;
+            font-size: 13px;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        .msg-error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #dc2626;
+        }
+
+        .msg-expired {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            color: #92400e;
+        }
+
+        .msg-expired .expired-icon {
+            font-size: 20px;
+            color: #f59e0b;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .msg-expired .expired-title {
+            font-weight: 600;
+            font-size: 14px;
+            color: #92400e;
+        }
+
+        .msg-expired .expired-detail {
+            font-size: 12px;
+            color: #b45309;
+            margin-top: 4px;
+        }
+
+        .msg-expired .contact-link {
+            display: inline-block;
+            margin-top: 10px;
+            font-size: 12px;
+            background: #fef3c7;
+            color: #92400e;
+            padding: 6px 16px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .msg-expired .contact-link:hover {
+            background: #fde68a;
+        }
+
+        /* Button */
+        .submit-btn {
+            width: 100%;
+            padding: 14px 16px;
+            background: linear-gradient(135deg, #1e40af, #1d4ed8);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 14px rgba(30, 64, 175, 0.35);
+        }
+
+        .submit-btn:hover {
+            background: linear-gradient(135deg, #1e3a8a, #1e40af);
+            box-shadow: 0 6px 20px rgba(30, 64, 175, 0.45);
+            transform: translateY(-1px);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0) scale(0.98);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-hidden { display: none; }
+
+        /* Footer */
+        .footer {
+            margin-top: 28px;
+            padding-top: 20px;
+            border-top: 1px solid #f1f5f9;
+            text-align: center;
+        }
+
+        .footer-secure {
+            font-size: 11px;
+            color: #94a3b8;
+        }
+
+        .footer-secure i {
+            margin-right: 4px;
+        }
+
+        .footer-demo {
+            font-size: 10px;
+            color: #cbd5e1;
+            margin-top: 6px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        /* Fallback logo */
+        .fallback-logo {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .fallback-icon {
+            width: 36px;
+            height: 36px;
+            background: #1e3a8a;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-weight: 700;
+            font-size: 16px;
+        }
+
+        .fallback-text {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1e3a8a;
+            letter-spacing: 1.5px;
+        }
+
+        /* Animations */
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+            from { opacity: 0; transform: translateY(24px); }
+            to   { opacity: 1; transform: translateY(0); }
         }
-        .animate-fade { animation: fadeIn 0.6s ease-out; }
-        .shake { animation: shake 0.4s ease-in-out; }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-8px); }
-            75% { transform: translateX(8px); }
+            25%      { transform: translateX(-8px); }
+            75%      { transform: translateX(8px); }
         }
+
+        .shake { animation: shake 0.4s ease-in-out; }
     </style>
 </head>
-<body class="gradient-bg min-h-screen flex items-center justify-center p-4">
-    <div class="glass-card rounded-2xl p-8 w-full max-w-md animate-fade">
-        <!-- Logo Area -->
-        <div class="text-center mb-8">
-            <div class="flex items-center justify-center gap-3 mb-4">
-                <img src="/logos/attributum-logo.png" alt="Attributum" class="h-10" onerror="this.style.display='none'">
-            </div>
-            <h1 class="text-2xl font-bold text-gray-800 tracking-wide">PIVOT Automation Suite</h1>
-            <p class="text-gray-500 mt-2 text-sm">Client Sandbox Environment</p>
-        </div>
+<body>
+    <div class="card">
+        <div class="accent-bar"></div>
+        <div class="card-inner">
 
-        <!-- Login Form -->
-        <form id="loginForm" onsubmit="handleLogin(event)">
-            <div class="mb-6">
-                <label for="accessCode" class="block text-sm font-medium text-gray-700 mb-2">
-                    <i class="fas fa-key mr-1 text-blue-500"></i> Access Code
-                </label>
-                <input
-                    type="text"
-                    id="accessCode"
-                    name="accessCode"
-                    placeholder="Enter your access code"
-                    autocomplete="off"
-                    class="input-focus w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800
-                           placeholder-gray-400 transition-all duration-200 outline-none text-center
-                           tracking-widest font-mono text-lg"
-                    required
-                    autofocus
-                >
+            <!-- Logo Area -->
+            <div class="logo-section">
+                <div class="logos-row">
+                    <img src="/logos/attributum-logo.png" alt="Attributum"
+                         onerror="this.outerHTML='<div class=\'fallback-logo\'><div class=\'fallback-icon\'>A</div><span class=\'fallback-text\'>ATTRIBUTUM</span></div>'">
+                    <div class="logo-divider"></div>
+                    <img src="/logos/pivot-logo.png" alt="PIVOT"
+                         onerror="this.style.display=\'none\'">
+                </div>
+                <div class="title">PIVOT Automation Suite</div>
+                <div class="subtitle">Client Sandbox Environment</div>
             </div>
 
-            <!-- Error Message -->
-            <div id="errorMsg" class="hidden mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm text-center">
+            <!-- Login Form -->
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="accessCode" class="form-label">
+                        <i class="fas fa-key"></i>Access Code
+                    </label>
+                    <input
+                        type="text"
+                        id="accessCode"
+                        name="accessCode"
+                        placeholder="Enter your access code"
+                        autocomplete="off"
+                        class="form-input"
+                        required
+                        autofocus
+                    >
+                </div>
+
+                <!-- Error Message -->
+                <div id="errorMsg" class="msg-box msg-error"></div>
+
+                <!-- Expired Message -->
+                <div id="expiredMsg" class="msg-box msg-expired">
+                    <i class="fas fa-hourglass-end expired-icon"></i>
+                    <div class="expired-title">Trial Period Ended</div>
+                    <div class="expired-detail">Your access has expired. Contact sales to renew.</div>
+                    <a href="mailto:pivot@attributum.com" class="contact-link">
+                        <i class="fas fa-envelope"></i> Contact Sales
+                    </a>
+                </div>
+
+                <button type="submit" id="loginBtn" class="submit-btn">
+                    <span id="btnText"><i class="fas fa-arrow-right" style="margin-right:8px"></i>Enter Sandbox</span>
+                    <span id="btnLoader" class="btn-hidden"><i class="fas fa-circle-notch fa-spin" style="margin-right:8px"></i>Verifying...</span>
+                </button>
+            </form>
+
+            <!-- Footer -->
+            <div class="footer">
+                <div class="footer-secure">
+                    <i class="fas fa-shield-alt"></i> Secure sandbox environment
+                </div>
+                <div class="footer-demo">Demo — For Evaluation Only</div>
             </div>
 
-            <!-- Expired Message -->
-            <div id="expiredMsg" class="hidden mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-center">
-                <i class="fas fa-clock text-amber-500 text-2xl mb-2"></i>
-                <p class="text-amber-700 font-medium">Trial Period Ended</p>
-                <p class="text-amber-600 text-sm mt-1">Your access has expired. Contact sales to renew.</p>
-                <a href="mailto:pivot@attributum.com"
-                   class="inline-block mt-3 text-sm text-blue-600 hover:text-blue-800 font-medium">
-                    <i class="fas fa-envelope mr-1"></i> Contact Sales
-                </a>
-            </div>
-
-            <button
-                type="submit"
-                id="loginBtn"
-                class="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold
-                       rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200
-                       shadow-lg hover:shadow-xl active:scale-[0.98]"
-            >
-                <span id="btnText"><i class="fas fa-sign-in-alt mr-2"></i>Enter Sandbox</span>
-                <span id="btnLoader" class="hidden"><i class="fas fa-spinner fa-spin mr-2"></i>Verifying...</span>
-            </button>
-        </form>
-
-        <!-- Footer -->
-        <div class="mt-8 pt-6 border-t border-gray-100 text-center">
-            <p class="text-xs text-gray-400">
-                <i class="fas fa-shield-alt mr-1"></i> Secure sandbox environment
-            </p>
-            <p class="text-xs text-gray-300 mt-1">
-                DEMO — FOR EVALUATION ONLY
-            </p>
         </div>
     </div>
 
@@ -111,17 +368,17 @@
             const btnText = document.getElementById('btnText');
             const btnLoader = document.getElementById('btnLoader');
             const loginBtn = document.getElementById('loginBtn');
-            const form = document.getElementById('loginForm');
+            const input = document.getElementById('accessCode');
 
             // Reset messages
-            errorMsg.classList.add('hidden');
-            expiredMsg.classList.add('hidden');
+            errorMsg.style.display = 'none';
+            expiredMsg.style.display = 'none';
 
             if (!code) return;
 
-            // Show loading state
-            btnText.classList.add('hidden');
-            btnLoader.classList.remove('hidden');
+            // Loading state
+            btnText.style.display = 'none';
+            btnLoader.style.display = 'inline';
             loginBtn.disabled = true;
 
             try {
@@ -134,26 +391,23 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    // Successful login - redirect to dashboard
                     window.location.href = '/';
                 } else if (data.expired) {
-                    // Show expired message
-                    expiredMsg.classList.remove('hidden');
-                    form.querySelector('input').classList.add('shake');
-                    setTimeout(() => form.querySelector('input').classList.remove('shake'), 400);
+                    expiredMsg.style.display = 'block';
+                    input.classList.add('shake');
+                    setTimeout(() => input.classList.remove('shake'), 400);
                 } else {
-                    // Invalid code
                     errorMsg.textContent = data.error || 'Invalid access code';
-                    errorMsg.classList.remove('hidden');
-                    form.querySelector('input').classList.add('shake');
-                    setTimeout(() => form.querySelector('input').classList.remove('shake'), 400);
+                    errorMsg.style.display = 'block';
+                    input.classList.add('shake');
+                    setTimeout(() => input.classList.remove('shake'), 400);
                 }
             } catch (err) {
                 errorMsg.textContent = 'Connection error. Please try again.';
-                errorMsg.classList.remove('hidden');
+                errorMsg.style.display = 'block';
             } finally {
-                btnText.classList.remove('hidden');
-                btnLoader.classList.add('hidden');
+                btnText.style.display = 'inline';
+                btnLoader.style.display = 'none';
                 loginBtn.disabled = false;
             }
         }

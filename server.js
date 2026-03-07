@@ -6,9 +6,12 @@ import FormData from "form-data";
 import path from "path";
 import { fileURLToPath } from "url"
 import { Buffer } from 'buffer';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import session from 'express-session';
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 import { requireAuth, validateAccessCode, generateSessionSecret, getSessionConfig } from './auth.js';
+import { logEvent, usageMiddleware, getUsageLog, getUsageSummary, exportCSV } from './usage-logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,13 +19,64 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
 const PORT = process.env.PORT || 3000;
 
-// JSON body parser (needed for login POST)
-app.use(express.json());
+/* =========================
+   Phase 4: Security Hardening
+========================= */
 
-// CORS middleware
+// ─── Upload safeguards ────────────────────────────
+const ALLOWED_MIMETYPES = [
+  'application/pdf',
+  'image/png', 'image/jpeg', 'image/jpg', 'image/tiff',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
+  'application/vnd.ms-excel', // xls
+  'text/csv'
+];
+const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_SIZE },
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_MIMETYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      console.log(`[SECURITY] Rejected file: ${file.originalname} (${file.mimetype})`);
+      cb(new Error(`File type not allowed: ${file.mimetype}. Accepted: PDF, PNG, JPEG, TIFF, XLSX, CSV.`), false);
+    }
+  }
+});
+
+// Multer error handler (file too large, bad type, etc.)
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: `File too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024} MB.` });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+  if (err && err.message && err.message.startsWith('File type not allowed')) {
+    return res.status(415).json({ error: err.message });
+  }
+  next(err);
+});
+
+// ─── Security headers ─────────────────────────────
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');         // Prevent MIME sniffing
+  res.setHeader('X-Frame-Options', 'DENY');                   // Prevent clickjacking
+  res.setHeader('X-XSS-Protection', '1; mode=block');         // XSS filter
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.removeHeader('X-Powered-By');                           // Hide Express fingerprint
+  next();
+});
+
+// ─── JSON body parser with size limit ─────────────
+app.use(express.json({ limit: '1mb' }));
+
+// ─── CORS middleware ──────────────────────────────
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -70,46 +124,71 @@ app.get("/login", (req, res) => {
 app.post("/api/auth/login", (req, res) => {
   const { access_code } = req.body;
 
-  if (!access_code) {
+  // Input validation: access code must be a non-empty string, max 50 chars, alphanumeric + hyphens
+  if (!access_code || typeof access_code !== 'string' || access_code.length > 50) {
     return res.status(400).json({ success: false, error: 'Access code required' });
   }
+  const sanitizedCode = access_code.replace(/[^A-Za-z0-9\-]/g, '');
+  if (sanitizedCode !== access_code) {
+    return res.status(400).json({ success: false, error: 'Invalid access code format' });
+  }
 
-  const client = validateAccessCode(access_code);
+  const client = validateAccessCode(sanitizedCode);
 
   if (!client) {
     console.log(`[AUTH] Failed login attempt with code: ${access_code.substring(0, 4)}****`);
+    logEvent({ event_type: 'login_failed', detail: `Code: ${access_code.substring(0, 4)}****` });
     return res.status(401).json({ success: false, error: 'Invalid access code' });
   }
 
   if (client.expired) {
     console.log(`[AUTH] Expired access attempt: ${client.client_name}`);
+    logEvent({ event_type: 'login_failed', client_id: client.client_id, client_name: client.client_name, detail: 'Expired' });
     return res.status(403).json({ success: false, expired: true, error: 'Access has expired' });
   }
 
-  // Set session data
-  req.session.authenticated = true;
-  req.session.clientInfo = {
-    client_id: client.client_id,
-    client_name: client.client_name,
-    role: client.role,
-    allowed_modules: client.allowed_modules,
-    rate_limit: client.rate_limit,
-    expiry_date: client.expiry_date
-  };
+  // Session regeneration on login (prevents session fixation attacks)
+  req.session.regenerate((err) => {
+    if (err) {
+      console.error('[AUTH] Session regeneration failed:', err.message);
+      return res.status(500).json({ success: false, error: 'Login failed, please retry' });
+    }
 
-  console.log(`[AUTH] Login successful: ${client.client_name} (${client.role})`);
+    // Set session data
+    req.session.authenticated = true;
+    req.session.clientInfo = {
+      client_id: client.client_id,
+      client_name: client.client_name,
+      role: client.role,
+      allowed_modules: client.allowed_modules,
+      rate_limit: client.rate_limit,
+      expiry_date: client.expiry_date
+    };
 
-  res.json({
-    success: true,
-    client_name: client.client_name,
-    role: client.role,
-    allowed_modules: client.allowed_modules
+    // Session fingerprint: tie session to user-agent to detect hijacking
+    req.session.fingerprint = crypto
+      .createHash('sha256')
+      .update(req.headers['user-agent'] || 'unknown')
+      .digest('hex')
+      .substring(0, 16);
+
+    console.log(`[AUTH] Login successful: ${client.client_name} (${client.role})`);
+    logEvent({ event_type: 'login', client_id: client.client_id, client_name: client.client_name, role: client.role });
+
+    res.json({
+      success: true,
+      client_name: client.client_name,
+      role: client.role,
+      allowed_modules: client.allowed_modules
+    });
   });
 });
 
 // Logout API
 app.post("/api/auth/logout", (req, res) => {
   const clientName = req.session?.clientInfo?.client_name || 'Unknown';
+  const clientId = req.session?.clientInfo?.client_id || null;
+  logEvent({ event_type: 'logout', client_id: clientId, client_name: clientName });
   req.session.destroy((err) => {
     if (err) {
       return res.status(500).json({ error: 'Logout failed' });
@@ -190,6 +269,7 @@ function requireModule(req, res, next) {
 
   if (!allowed.includes(requiredModule)) {
     console.log(`[ACCESS] BLOCKED: ${req.clientInfo?.client_name} tried ${req.path} (needs "${requiredModule}")`);
+    logEvent({ event_type: 'module_blocked', client_id: req.clientInfo?.client_id, client_name: req.clientInfo?.client_name, role: req.clientInfo?.role, module: requiredModule, endpoint: req.path, method: req.method, status_code: 403 });
     return res.status(403).json({
       error: 'Module access denied',
       message: `Your account does not include the ${requiredModule} module. Contact sales to upgrade.`,
@@ -202,6 +282,9 @@ function requireModule(req, res, next) {
 
 // Apply module gating to all API routes
 app.use(requireModule);
+
+// Usage logging middleware — logs every API call that hits a proxy endpoint
+app.use(usageMiddleware(ENDPOINT_MODULE_MAP));
 
 /* =========================
    Dashboard (protected)
@@ -228,17 +311,130 @@ app.get("/api/auth/permissions", (req, res) => {
 });
 
 /* =========================
-   Admin route (Super Admin only)
+   Admin routes (Super Admin only)
 ========================= */
-app.get("/admin", (req, res) => {
+
+// Admin guard helper
+function requireAdmin(req, res, next) {
   if (!req.clientInfo || req.clientInfo.role !== 'super_admin') {
     return res.status(403).json({ error: 'Admin access required' });
   }
-  res.json({
-    message: 'Admin dashboard placeholder',
-    note: 'Full admin dashboard will be built in Phase 3',
-    admin: req.clientInfo.client_name
+  next();
+}
+
+// Admin dashboard page
+app.get("/admin", requireAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "admin.html"));
+});
+
+// ─── Usage APIs ───────────────────────────────────
+
+// GET /api/admin/usage — event log with optional filters
+app.get("/api/admin/usage", requireAdmin, (req, res) => {
+  const { client_id, event_type, from_date, to_date, limit } = req.query;
+  const entries = getUsageLog({
+    client_id,
+    event_type,
+    from_date,
+    to_date,
+    limit: limit ? parseInt(limit) : 200
   });
+  res.json(entries);
+});
+
+// GET /api/admin/usage/summary — per-client aggregated stats
+app.get("/api/admin/usage/summary", requireAdmin, (req, res) => {
+  res.json(getUsageSummary());
+});
+
+// GET /api/admin/usage/export — CSV download
+app.get("/api/admin/usage/export", requireAdmin, (req, res) => {
+  const entries = getUsageLog();
+  const csv = exportCSV(entries);
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="pivot-usage-${new Date().toISOString().split('T')[0]}.csv"`);
+  res.send(csv);
+});
+
+// ─── Client Management APIs ───────────────────────
+
+// Helper: load/save clients.json
+function loadClientsFile() {
+  const data = readFileSync(path.join(__dirname, 'clients.json'), 'utf8');
+  return JSON.parse(data);
+}
+
+function saveClientsFile(data) {
+  writeFileSync(path.join(__dirname, 'clients.json'), JSON.stringify(data, null, 2), 'utf8');
+}
+
+function generateAccessCode(role) {
+  const prefix = role === 'super_admin' ? 'PIVOT-ADM' : 'PIVOT-CLI';
+  const rand = crypto.randomBytes(4).toString('hex').toUpperCase();
+  return `${prefix}-${rand}`;
+}
+
+// GET /api/admin/clients — list all clients
+app.get("/api/admin/clients", requireAdmin, (req, res) => {
+  const data = loadClientsFile();
+  res.json(data.clients);
+});
+
+// POST /api/admin/clients — create new client
+app.post("/api/admin/clients", requireAdmin, (req, res) => {
+  const { client_name, role, allowed_modules, rate_limit, expiry_date } = req.body;
+
+  if (!client_name) {
+    return res.status(400).json({ success: false, error: 'Client name is required' });
+  }
+
+  const data = loadClientsFile();
+  const clientId = client_name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + crypto.randomBytes(2).toString('hex');
+  const accessCode = generateAccessCode(role || 'client');
+
+  const newClient = {
+    client_id: clientId,
+    client_name,
+    access_code: accessCode,
+    role: role || 'client',
+    allowed_modules: allowed_modules || ['portability'],
+    rate_limit: rate_limit || 100,
+    expiry_date: expiry_date || new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    active: true
+  };
+
+  data.clients.push(newClient);
+  saveClientsFile(data);
+
+  console.log(`[ADMIN] Client created: ${client_name} (${clientId}) by ${req.clientInfo.client_name}`);
+  logEvent({ event_type: 'api_call', client_id: req.clientInfo.client_id, client_name: req.clientInfo.client_name, role: 'super_admin', module: 'admin', endpoint: '/api/admin/clients', method: 'POST', detail: `Created client: ${client_name}` });
+
+  res.json({ success: true, client: newClient, access_code: accessCode });
+});
+
+// PUT /api/admin/clients/:id — update client
+app.put("/api/admin/clients/:id", requireAdmin, (req, res) => {
+  const data = loadClientsFile();
+  const idx = data.clients.findIndex(c => c.client_id === req.params.id);
+
+  if (idx === -1) {
+    return res.status(404).json({ success: false, error: 'Client not found' });
+  }
+
+  const updates = req.body;
+  const allowed = ['client_name', 'role', 'allowed_modules', 'rate_limit', 'expiry_date', 'active'];
+  for (const key of allowed) {
+    if (updates[key] !== undefined) {
+      data.clients[idx][key] = updates[key];
+    }
+  }
+
+  saveClientsFile(data);
+
+  console.log(`[ADMIN] Client updated: ${data.clients[idx].client_name} by ${req.clientInfo.client_name}`);
+  logEvent({ event_type: 'api_call', client_id: req.clientInfo.client_id, client_name: req.clientInfo.client_name, role: 'super_admin', module: 'admin', endpoint: `/api/admin/clients/${req.params.id}`, method: 'PUT', detail: `Updated client: ${data.clients[idx].client_name}` });
+
+  res.json({ success: true, client: data.clients[idx] });
 });
 
 /* =========================
@@ -247,30 +443,21 @@ app.get("/admin", (req, res) => {
 app.post("/api/ml_process", upload.single('input_file'), async (req, res) => {
   try {
     const apiKey = process.env.API_KEY;
-    console.log('API Key available:', !!apiKey);
-    console.log('API Key length:', apiKey?.length);
-
     if (!apiKey) {
-      return res.status(500).json({ error: 'API key not configured on server' });
+      return res.status(500).json({ error: 'Server configuration error. Contact administrator.' });
     }
 
-    // Create a new FormData object for the external API
     const externalFormData = new FormData();
-
-    // Add the file if it exists
     if (req.file) {
       externalFormData.append('input_file', req.file.buffer, {
         filename: req.file.originalname,
         contentType: req.file.mimetype
       });
-      console.log('File added:', req.file.originalname, 'size:', req.file.size, 'type:', req.file.mimetype);
+      console.log(`[API] ml_process file: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB) by ${req.clientInfo?.client_name}`);
     }
 
-    // Add other form fields
     externalFormData.append('insurance_company', 'STAR HEALTH');
     externalFormData.append('data_type', 'specific');
-
-    console.log('FormData fields created');
 
     const response = await fetch('https://PIVOT-Port-PolDoc-Health.Attributum.com/api/ml_process', {
       method: 'POST',
@@ -281,18 +468,17 @@ app.post("/api/ml_process", upload.single('input_file'), async (req, res) => {
       body: externalFormData.getBuffer()
     });
 
-    console.log('External API response status:', response.status);
+    console.log(`[API] ml_process response: ${response.status}`);
 
     const data = await response.json();
-    console.log('External API response:', data);
 
     if (!response.ok) {
-      return res.status(response.status).json(data);
+      return res.status(response.status).json({ error: `API processing error (${response.status})` });
     }
 
     res.json(data);
   } catch (error) {
-    console.error('Proxy error:', error);
+    console.error('[API] ml_process proxy error:', error.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -302,15 +488,12 @@ app.post("/api/ml_process", upload.single('input_file'), async (req, res) => {
 ========================= */
 app.post("/api/portability/analyze", upload.single("document"), async (req, res) => {
   try {
-    console.log('=== PIVOT Portability Demo Analysis ===');
-    console.log('File:', req.file ? req.file.originalname : 'No file');
-
     if (!req.file) {
-      console.log('ERROR: No file uploaded');
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    // Build multipart form using form-data package
+    console.log(`[API] portability/analyze: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB) by ${req.clientInfo?.client_name}`);
+
     const form = new FormData();
     form.append('input_file', req.file.buffer, {
       filename: req.file.originalname,
@@ -319,9 +502,6 @@ app.post("/api/portability/analyze", upload.single("document"), async (req, res)
     form.append('insurance_company', 'demo');
     form.append('data_type', 'specific');
 
-    console.log('Calling PIVOT API...');
-
-    // Forward request to PIVOT API with Authorization
     const response = await fetch("https://PIVOT-Port-PolDoc-Health.Attributum.com/api/ml_process", {
       method: "POST",
       headers: {
@@ -331,27 +511,18 @@ app.post("/api/portability/analyze", upload.single("document"), async (req, res)
       body: form
     });
 
-    console.log('PIVOT API Response Status:', response.status);
+    console.log(`[API] portability/analyze response: ${response.status}`);
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('PIVOT API Error:', response.status, errorText);
-      return res.status(response.status).json({
-        error: `PIVOT API Error: ${response.status}`,
-        details: errorText
-      });
+      return res.status(response.status).json({ error: `API processing error (${response.status})` });
     }
 
     const result = await response.json();
-    console.log('PIVOT API Success - Response keys:', Object.keys(result));
     res.json(result);
 
   } catch (error) {
-    console.error('Proxy Error:', error);
-    res.status(500).json({
-      error: "Proxy server error",
-      details: error.message
-    });
+    console.error('[API] portability/analyze error:', error.message);
+    res.status(500).json({ error: "Processing error. Please try again." });
   }
 });
 
@@ -360,29 +531,26 @@ app.post("/api/portability/analyze", upload.single("document"), async (req, res)
 ========================= */
 app.post("/api/portability/upload", upload.single("input_file"), async (req, res) => {
   try {
-    console.log('=== PIVOT Portability Upload ===');
-    console.log('File:', req.file ? req.file.originalname : 'No file');
-    console.log('Insurance Company:', req.body.insurance_company);
-    console.log('Data Type:', req.body.data_type);
-    console.log('Request body keys:', Object.keys(req.body));
-
     if (!req.file) {
-      console.log('ERROR: No file uploaded');
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    // Build multipart form using form-data package
+    // Input validation: insurance_company is required
+    const insurer = req.body.insurance_company;
+    if (!insurer || typeof insurer !== 'string' || insurer.length > 100) {
+      return res.status(400).json({ error: "Valid insurance company name is required" });
+    }
+
+    console.log(`[API] portability/upload: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB) insurer=${insurer} by ${req.clientInfo?.client_name}`);
+
     const form = new FormData();
     form.append('input_file', req.file.buffer, {
       filename: req.file.originalname,
       contentType: req.file.mimetype
     });
-    form.append('insurance_company', req.body.insurance_company);
+    form.append('insurance_company', insurer);
     form.append('data_type', 'specific');
 
-    console.log('Calling PIVOT API...');
-
-    // Forward request to PIVOT API with Authorization
     const response = await fetch("https://PIVOT-Port-PolDoc-Health.Attributum.com/api/ml_process", {
       method: "POST",
       headers: {
@@ -392,27 +560,18 @@ app.post("/api/portability/upload", upload.single("input_file"), async (req, res
       body: form
     });
 
-    console.log('PIVOT API Response Status:', response.status);
+    console.log(`[API] portability/upload response: ${response.status}`);
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('PIVOT API Error:', response.status, errorText);
-      return res.status(response.status).json({
-        error: `PIVOT API Error: ${response.status}`,
-        details: errorText
-      });
+      return res.status(response.status).json({ error: `API processing error (${response.status})` });
     }
 
     const result = await response.json();
-    console.log('PIVOT API Success - Response keys:', Object.keys(result));
     res.json(result);
 
   } catch (error) {
-    console.error('Proxy Error:', error);
-    res.status(500).json({
-      error: "Proxy server error",
-      details: error.message
-    });
+    console.error('[API] portability/upload error:', error.message);
+    res.status(500).json({ error: "Processing error. Please try again." });
   }
 });
 
@@ -420,9 +579,7 @@ app.post("/api/portability/upload", upload.single("input_file"), async (req, res
    ML proxy endpoint
 ========================= */
 app.post("/ml_process", upload.single("input_file"), (req, res) => {
-  console.log('=== UPLOAD RECEIVED ===');
-  console.log('File:', req.file?.originalname);
-  console.log('Insurance company:', req.body.insurance_company);
+  console.log(`[API] ml_process (mock): ${req.file?.originalname || 'no file'} by ${req.clientInfo?.client_name}`);
 
   // Return working mock data for demo
   const mockResponse = {
@@ -451,7 +608,6 @@ app.post("/ml_process", upload.single("input_file"), (req, res) => {
     }
   };
 
-  console.log('Returning mock data');
   res.json(mockResponse);
 });
 
@@ -464,17 +620,22 @@ app.post("/api/underwriting/analyze", upload.single("input_file"), async (req, r
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
+
+    const apiKey = process.env.TELEMER_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "Server configuration error. Contact administrator." });
+    }
+
+    const insurer = req.body.insurance_company || 'telemer_hdfcergo';
+    console.log(`[API] underwriting/analyze: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB) insurer=${insurer} by ${req.clientInfo?.client_name}`);
+
     const form = new FormData();
     form.append("input_file", req.file.buffer, {
       filename: req.file.originalname,
       contentType: req.file.mimetype
     });
-    form.append("insurance_company", req.body.insurance_company || req.body.insurance_company || 'telemer_hdfcergo');
-    const apiKey = process.env.TELEMER_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: "TeleMER API key not configured" });
-    }
-    console.log("=== PIVOT Underwriting TeleMER Analysis ===");
+    form.append("insurance_company", insurer);
+
     const response = await fetch("https://pivot-uwcopilot-telemer-health.attributum.com/api/ml_process", {
       method: "POST",
       headers: {
@@ -483,17 +644,18 @@ app.post("/api/underwriting/analyze", upload.single("input_file"), async (req, r
       },
       body: form.getBuffer()
     });
-    console.log("TeleMER API Response Status:", response.status);
+
+    console.log(`[API] underwriting/analyze response: ${response.status}`);
+
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("TeleMER API Error:", response.status, errorText);
-      return res.status(response.status).json({ error: "TeleMER API Error: " + response.status });
+      return res.status(response.status).json({ error: `API processing error (${response.status})` });
     }
+
     const result = await response.json();
     res.json(result);
   } catch (error) {
-    console.error("TeleMER Proxy Error:", error.message);
-    res.status(500).json({ error: "Proxy server error" });
+    console.error("[API] underwriting/analyze error:", error.message);
+    res.status(500).json({ error: "Processing error. Please try again." });
   }
 });
 

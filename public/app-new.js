@@ -128,10 +128,11 @@ const ScoreConfigPage = ({ setPage }) => {
             {/* PIVOT Logo - Left */}
             <div className="flex items-center space-x-6 w-56">
               <div className="flex items-center space-x-2">
-                <img 
-                  src="/logos/pivot-logo.png" 
-                  alt="PIVOT Logo" 
+                <img
+                  src="/logos/pivot-logo.png"
+                  alt="PIVOT Logo"
                   className="w-40 h-20 rounded-lg object-contain"
+                  style={{maxHeight: '56px', maxWidth: '160px', width: 'auto', height: 'auto', objectFit: 'contain'}}
                   onError={(e) => {
                     e.target.style.display = 'none';
                     e.target.nextElementSibling.style.display = 'flex';
@@ -142,20 +143,21 @@ const ScoreConfigPage = ({ setPage }) => {
                 </div>
               </div>
             </div>
-            
+
             {/* Title - Middle */}
             <div className="flex-1 text-center">
               <h1 className="text-2xl font-bold text-gray-800 mb-6">PIVOT Portability Score Settings</h1>
               <p className="text-sm text-gray-600 mt-1">Configure portability scoring weights and thresholds</p>
             </div>
-            
+
             {/* Attributum Logo - Right */}
             <div className="flex items-center justify-end space-x-6 w-56">
               <div className="flex items-center space-x-2">
-                <img 
-                  src="/logos/attributum-logo.png" 
-                  alt="Attributum Logo" 
+                <img
+                  src="/logos/attributum-logo.png"
+                  alt="Attributum Logo"
                   className="w-50 h-20 rounded-lg object-contain"
+                  style={{maxHeight: '56px', maxWidth: '180px', width: 'auto', height: 'auto', objectFit: 'contain'}}
                   onError={(e) => {
                     e.target.style.display = 'none';
                     e.target.nextElementSibling.style.display = 'flex';
@@ -1751,10 +1753,11 @@ const getSumInsuredFromData = (responseData) => {
               <div className="flex items-center space-x-6 w-56">
                 {/* Attributum Logo */}
                 <div className="flex items-center space-x-2">
-                  <img 
-                    src="/logos/attributum-logo.png" 
-                    alt="Attributum Logo" 
+                  <img
+                    src="/logos/attributum-logo.png"
+                    alt="Attributum Logo"
                     className="w-50 h-20 rounded-lg object-contain"
+                    style={{maxHeight: '56px', maxWidth: '180px', width: 'auto', height: 'auto', objectFit: 'contain'}}
                     onError={(e) => {
                       e.target.style.display = 'none';
                       e.target.nextElementSibling.style.display = 'flex';
@@ -1765,19 +1768,20 @@ const getSumInsuredFromData = (responseData) => {
                   </div>
                 </div>
               </div>
-              
+
               <div className="flex-1 text-center">
                 <h1 className="text-3xl font-bold text-gray-800">PIVOT Insurance Automation Suite</h1>
                 <p className="text-sm text-gray-600">Live Product Demos & Enterprise Sandbox</p>
               </div>
-              
+
               <div className="flex items-center justify-end space-x-6 w-56">
                 {/* PIVOT Logo */}
                 <div className="flex items-center space-x-2">
-                  <img 
-                    src="/logos/pivot-logo.png" 
-                    alt="PIVOT Logo" 
+                  <img
+                    src="/logos/pivot-logo.png"
+                    alt="PIVOT Logo"
                     className="w-40 h-20 rounded-lg object-contain"
+                    style={{maxHeight: '56px', maxWidth: '160px', width: 'auto', height: 'auto', objectFit: 'contain'}}
                     onError={(e) => {
                       e.target.style.display = 'none';
                       e.target.nextElementSibling.style.display = 'flex';
@@ -1807,6 +1811,11 @@ const getSumInsuredFromData = (responseData) => {
             </div>
             <div className="flex items-center space-x-4">
               <span className="text-blue-300 text-xs">DEMO — FOR EVALUATION ONLY</span>
+              {sessionInfo.role === 'super_admin' && (
+                <a href="/admin" className="bg-amber-600 hover:bg-amber-500 px-3 py-1 rounded text-xs font-semibold transition-colors" style={{color:'#fff',textDecoration:'none'}}>
+                  <i className="fas fa-cog mr-1"></i> Admin Panel
+                </a>
+              )}
               <button onClick={handleLogout} className="bg-blue-800 hover:bg-blue-700 px-3 py-1 rounded text-xs font-medium transition-colors">
                 <i className="fas fa-sign-out-alt mr-1"></i> Logout
               </button>
@@ -2002,6 +2011,7 @@ const getSumInsuredFromData = (responseData) => {
               <div className="flex items-center space-x-6 w-56">
                 <div className="flex items-center space-x-2">
                   <img src="/logos/attributum-logo.png" alt="Attributum Logo" className="w-50 h-20 rounded-lg object-contain"
+                    style={{maxHeight: '56px', maxWidth: '180px', width: 'auto', height: 'auto', objectFit: 'contain'}}
                     onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }} />
                   <div className="w-50 h-20 bg-blue-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
                     <span className="text-white font-bold text-xl">A</span>
@@ -2015,6 +2025,7 @@ const getSumInsuredFromData = (responseData) => {
               <div className="flex items-center justify-end space-x-6 w-56">
                 <div className="flex items-center space-x-2">
                   <img src="/logos/pivot-logo.png" alt="PIVOT Logo" className="w-40 h-20 rounded-lg object-contain"
+                    style={{maxHeight: '56px', maxWidth: '160px', width: 'auto', height: 'auto', objectFit: 'contain'}}
                     onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }} />
                   <div className="w-40 h-20 bg-purple-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
                     <span className="text-white font-bold text-xl">P</span>
@@ -2174,10 +2185,11 @@ const getSumInsuredFromData = (responseData) => {
               <div className="flex items-center space-x-6 w-56">
                 {/* Attributum Logo */}
                 <div className="flex items-center space-x-2">
-                  <img 
-                    src="/logos/attributum-logo.png" 
-                    alt="Attributum Logo" 
+                  <img
+                    src="/logos/attributum-logo.png"
+                    alt="Attributum Logo"
                     className="w-50 h-20 rounded-lg object-contain"
+                    style={{maxHeight: '56px', maxWidth: '180px', width: 'auto', height: 'auto', objectFit: 'contain'}}
                     onError={(e) => {
                       e.target.style.display = 'none';
                       e.target.nextElementSibling.style.display = 'flex';
@@ -2188,19 +2200,20 @@ const getSumInsuredFromData = (responseData) => {
                   </div>
                 </div>
               </div>
-              
+
               <div className="flex-1 text-center">
                 <h1 className="text-3xl font-bold text-gray-800">PIVOT Insurance Automation Suite</h1>
                 <p className="text-sm text-gray-600">Live Product Demos & Enterprise Sandbox</p>
               </div>
-              
+
               <div className="flex items-center justify-end space-x-6 w-56">
                 {/* PIVOT Logo */}
                 <div className="flex items-center space-x-2">
-                  <img 
-                    src="/logos/pivot-logo.png" 
-                    alt="PIVOT Logo" 
+                  <img
+                    src="/logos/pivot-logo.png"
+                    alt="PIVOT Logo"
                     className="w-40 h-20 rounded-lg object-contain"
+                    style={{maxHeight: '56px', maxWidth: '160px', width: 'auto', height: 'auto', objectFit: 'contain'}}
                     onError={(e) => {
                       e.target.style.display = 'none';
                       e.target.nextElementSibling.style.display = 'flex';

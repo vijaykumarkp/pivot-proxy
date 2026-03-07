@@ -72,6 +72,24 @@ export function requireAuth(req, res, next) {
     return res.redirect('/login');
   }
 
+  // Phase 4: Session fingerprint check — detect session hijacking
+  if (req.session.fingerprint) {
+    const currentFingerprint = crypto
+      .createHash('sha256')
+      .update(req.headers['user-agent'] || 'unknown')
+      .digest('hex')
+      .substring(0, 16);
+
+    if (req.session.fingerprint !== currentFingerprint) {
+      console.log(`[SECURITY] Session fingerprint mismatch for ${req.session.clientInfo?.client_name} — possible hijack attempt`);
+      req.session.destroy(() => {});
+      if (reqPath.startsWith('/api/')) {
+        return res.status(401).json({ error: 'Session invalid. Please log in again.' });
+      }
+      return res.redirect('/login');
+    }
+  }
+
   // Session is valid - attach client info to request
   req.clientInfo = req.session.clientInfo;
   next();

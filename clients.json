@@ -5,7 +5,12 @@
       "client_name": "Vijay Kumar (Super Admin)",
       "access_code": "PIVOT-ADM-55B571AD",
       "role": "super_admin",
-      "allowed_modules": ["portability", "endorsements", "telemer", "operations"],
+      "allowed_modules": [
+        "portability",
+        "endorsements",
+        "telemer",
+        "operations"
+      ],
       "rate_limit": 9999,
       "expiry_date": "2027-03-05",
       "active": true
@@ -15,7 +20,12 @@
       "client_name": "Backup Admin",
       "access_code": "PIVOT-ADM-BACKUP01",
       "role": "super_admin",
-      "allowed_modules": ["portability", "endorsements", "telemer", "operations"],
+      "allowed_modules": [
+        "portability",
+        "endorsements",
+        "telemer",
+        "operations"
+      ],
       "rate_limit": 9999,
       "expiry_date": "2027-03-05",
       "active": true
@@ -25,7 +35,9 @@
       "client_name": "Demo Insurance Corp",
       "access_code": "DEMO-BB8B8B",
       "role": "client",
-      "allowed_modules": ["portability"],
+      "allowed_modules": [
+        "portability"
+      ],
       "rate_limit": 100,
       "expiry_date": "2026-06-05",
       "active": true

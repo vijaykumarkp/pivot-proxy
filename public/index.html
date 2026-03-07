@@ -7,7 +7,8 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind CSS: local build (no CDN dependency) -->
+    <link href="/assets/tailwind.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         .gradient-bg {
@@ -33,6 +34,14 @@
         }
         .pivot-cyan {
             background-color: #06b6d4;
+        }
+        /* Safety net: constrain ALL images in headers even if Tailwind fails to load */
+        header img {
+            max-height: 56px !important;
+            max-width: 180px !important;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain !important;
         }
     </style>
 </head>

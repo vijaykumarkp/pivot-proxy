@@ -405,6 +405,348 @@ const ScoreConfigPage = ({ setPage }) => {
   );
 };
 
+// ============================================================
+// TeleMER Risk Scoring Engine
+// Computes a composite risk score (0-100) from TeleMER API data
+// ============================================================
+const computeTeleMERScore = (responseData) => {
+  const data = responseData?.response?.data;
+  if (!data) return { total: 0, breakdown: [], level: 'Unknown', color: '#9ca3af', bmi: 0, age: 0 };
+
+  const breakdown = [];
+  let total = 0;
+
+  // --- 1. BMI Factor (0-25 points) ---
+  const bmi = parseFloat(data?.MetaData?.BMI || data?.MetaData?.bmi || 0);
+  const bmiCategory = data?.Summary?.PIVOT_BMI_Category || '';
+  let bmiPoints = 0;
+  let bmiLabel = '';
+  if (bmi >= 40)       { bmiPoints = 25; bmiLabel = 'Morbidly Obese'; }
+  else if (bmi >= 35)  { bmiPoints = 22; bmiLabel = 'Severely Obese'; }
+  else if (bmi >= 30)  { bmiPoints = 18; bmiLabel = 'Obese'; }
+  else if (bmi >= 25)  { bmiPoints = 12; bmiLabel = 'Overweight'; }
+  else if (bmi > 0 && bmi < 18.5) { bmiPoints = 10; bmiLabel = 'Underweight'; }
+  else if (bmi >= 18.5) { bmiPoints = 0; bmiLabel = 'Normal'; }
+  else if (bmiCategory.toLowerCase() === 'adverse') { bmiPoints = 20; bmiLabel = 'Adverse'; }
+  breakdown.push({ factor: 'BMI', points: bmiPoints, max: 25, detail: bmi > 0 ? `${bmi} (${bmiLabel})` : (bmiCategory || 'N/A'), icon: 'fa-weight' });
+  total += bmiPoints;
+
+  // --- 2. Medical Declarations (0-30 points) ---
+  const medDecls = data?.YesMedicalDeclarationData || [];
+  const surgicalCount = medDecls.filter(d => (d.Details || '').toLowerCase().includes('surgical')).length;
+  const medPoints = Math.min(30, medDecls.length * 8 + surgicalCount * 4);
+  breakdown.push({ factor: 'Medical Declarations', points: medPoints, max: 30, detail: `${medDecls.length} condition${medDecls.length !== 1 ? 's' : ''} (${surgicalCount} surgical)`, icon: 'fa-notes-medical' });
+  total += medPoints;
+
+  // --- 3. Age Factor (0-20 points) ---
+  const dobStr = data?.MetaData?.['Date of Birth of member'] || data?.MetaData?.['DOB of Proposer'] || '';
+  let age = 0;
+  let agePoints = 0;
+  if (dobStr) {
+    const parts = dobStr.split(/[-\/]/);
+    if (parts.length === 3) {
+      let dobDate = null;
+      if (parts[2] && parts[2].length === 4) dobDate = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+      else if (parts[0] && parts[0].length === 4) dobDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      if (dobDate && !isNaN(dobDate.getTime())) {
+        age = Math.floor((new Date() - dobDate) / (365.25 * 24 * 60 * 60 * 1000));
+      }
+    }
+  }
+  if (age > 60) agePoints = 20;
+  else if (age > 50) agePoints = 15;
+  else if (age > 40) agePoints = 10;
+  else if (age > 30) agePoints = 5;
+  breakdown.push({ factor: 'Age', points: agePoints, max: 20, detail: age > 0 ? `${age} years` : 'Unknown', icon: 'fa-user-clock' });
+  total += agePoints;
+
+  // --- 4. Medical Category from PIVOT (0-15 points) ---
+  const medCategory = data?.Summary?.PIVOT_Medical_Declarations_Category || '';
+  const catPoints = medCategory.toLowerCase() === 'adverse' ? 15 : 0;
+  breakdown.push({ factor: 'PIVOT Medical Category', points: catPoints, max: 15, detail: medCategory || 'N/A', icon: 'fa-file-medical' });
+  total += catPoints;
+
+  // --- 5. Non-Medical / Portability Flags (0-10 points) ---
+  const nonMedDecls = data?.YesNonMedicalDeclarationData || [];
+  const isPortability = nonMedDecls.some(d => (d.Questions || '').toLowerCase().includes('portability'));
+  let nonMedPoints = isPortability ? 6 : 0;
+  nonMedPoints += Math.min(4, (nonMedDecls.length - (isPortability ? 1 : 0)) * 2);
+  nonMedPoints = Math.max(0, nonMedPoints);
+  breakdown.push({ factor: 'Non-Medical Flags', points: nonMedPoints, max: 10, detail: isPortability ? `Portability case + ${nonMedDecls.length - 1} other` : `${nonMedDecls.length} flag${nonMedDecls.length !== 1 ? 's' : ''}`, icon: 'fa-flag' });
+  total += nonMedPoints;
+
+  total = Math.min(100, total);
+
+  let level, color;
+  if (total <= 25)      { level = 'Low Risk'; color = '#16a34a'; }
+  else if (total <= 50) { level = 'Moderate Risk'; color = '#ca8a04'; }
+  else if (total <= 75) { level = 'High Risk'; color = '#ea580c'; }
+  else                  { level = 'Very High Risk'; color = '#dc2626'; }
+
+  return { total, breakdown, level, color, bmi, age };
+};
+
+// ============================================================
+// AI Follow-up Questions Generator
+// ============================================================
+const generateFollowUpQuestions = (responseData) => {
+  const data = responseData?.response?.data;
+  if (!data) return [];
+
+  const questions = [];
+  const medDecls = data?.YesMedicalDeclarationData || [];
+  const nonMedDecls = data?.YesNonMedicalDeclarationData || [];
+  const bmi = parseFloat(data?.MetaData?.BMI || 0);
+
+  const dobStr = data?.MetaData?.['Date of Birth of member'] || data?.MetaData?.['DOB of Proposer'] || '';
+  let memberAge = 0;
+  if (dobStr) {
+    const parts = dobStr.split(/[-\/]/);
+    if (parts.length === 3) {
+      let d = null;
+      if (parts[2] && parts[2].length === 4) d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+      else if (parts[0] && parts[0].length === 4) d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      if (d && !isNaN(d.getTime())) memberAge = Math.floor((new Date() - d) / (365.25 * 24 * 60 * 60 * 1000));
+    }
+  }
+
+  medDecls.forEach((decl) => {
+    const q = (decl.Questions || '').toLowerCase();
+    const det = (decl.Details || '').toLowerCase();
+    const combined = q + ' ' + det;
+
+    if (combined.includes('fracture') || combined.includes('bone') || combined.includes('joint') || combined.includes('arthritis') || combined.includes('knee') || combined.includes('ligament')) {
+      questions.push({ category: 'Orthopedic', severity: 'high', icon: 'fa-bone', items: [
+        'Is any implant/plate still in place? Any planned removal surgery?',
+        'Current mobility status and range of motion?',
+        'Any ongoing physiotherapy or rehabilitation?',
+        'Any complications post-surgery (infection, non-union, chronic pain)?',
+        'Impact on daily activities and occupation?'
+      ], context: 'Orthopedic / fracture / joint disorder history detected' });
+    }
+
+    if (combined.includes('cataract') || combined.includes('eye') || combined.includes('vision') || combined.includes('retina')) {
+      questions.push({ category: 'Ophthalmology', severity: 'medium', icon: 'fa-eye', items: [
+        'Current corrected vision status in both eyes?',
+        'Type of intraocular lens (IOL) implanted?',
+        'Any post-operative complications (glaucoma, retinal detachment)?',
+        'Date of last comprehensive eye examination?'
+      ], context: 'Eye / cataract surgical history detected' });
+    }
+
+    if (combined.includes('hysterectomy') || combined.includes('uterus') || combined.includes('fibroid') || combined.includes('fibroadenoma')) {
+      questions.push({ category: 'Gynecological', severity: 'medium', icon: 'fa-hospital', items: [
+        'Type of hysterectomy (total / partial / radical)?',
+        'Histopathology / biopsy report findings?',
+        'Is the member on Hormone Replacement Therapy (HRT)?',
+        'Any post-operative complications or ongoing treatment?'
+      ], context: 'Gynecological surgical history detected' });
+    }
+
+    if (combined.includes('hernia')) {
+      questions.push({ category: 'Surgical - Hernia', severity: 'medium', icon: 'fa-procedures', items: [
+        'Type of hernia repair (open / laparoscopic / mesh)?',
+        'Any recurrence of hernia post-surgery?',
+        'Current symptoms - any discomfort or bulging at repair site?'
+      ], context: 'Hernia repair history detected' });
+    }
+
+    if (combined.includes('heart') || combined.includes('cardiac') || combined.includes('chest pain') || combined.includes('angina')) {
+      questions.push({ category: 'Cardiovascular', severity: 'critical', icon: 'fa-heartbeat', items: [
+        'Latest ECG, Echo, and Stress Test reports?',
+        'Current cardiac medications (blood thinners, beta-blockers, statins)?',
+        'Any stent placement or bypass surgery history?',
+        'Exercise tolerance and functional capacity (NYHA class)?',
+        'Ejection fraction percentage?'
+      ], context: 'Cardiovascular / cardiac history detected' });
+    }
+
+    if (combined.includes('diabetes') || combined.includes('sugar') || combined.includes('insulin') || combined.includes('hba1c')) {
+      questions.push({ category: 'Diabetes / Metabolic', severity: 'high', icon: 'fa-tint', items: [
+        'Latest HbA1c level and fasting blood sugar?',
+        'Current medications - oral hypoglycemics or insulin?',
+        'Any diabetic complications (retinopathy, nephropathy, neuropathy)?',
+        'Duration since initial diagnosis and trend of control?'
+      ], context: 'Diabetes / metabolic disorder history detected' });
+    }
+
+    if (combined.includes('blood pressure') || combined.includes('hypertension')) {
+      questions.push({ category: 'Hypertension', severity: 'high', icon: 'fa-heartbeat', items: [
+        'Current BP readings and target range?',
+        'Anti-hypertensive medications and dosages?',
+        'Any end-organ damage assessment (kidney, heart, retina)?',
+        'Duration and stability of BP control?'
+      ], context: 'Hypertension history detected' });
+    }
+
+    if (combined.includes('thyroid')) {
+      questions.push({ category: 'Thyroid / Endocrine', severity: 'medium', icon: 'fa-pills', items: [
+        'Latest TSH and thyroid function test results?',
+        'Current medications and dosage?',
+        'Any thyroid nodules or goiter on ultrasound?',
+        'Hypothyroid or hyperthyroid - type and duration?'
+      ], context: 'Thyroid disorder history detected' });
+    }
+
+    if (combined.includes('kidney') || combined.includes('renal') || combined.includes('creatinine')) {
+      questions.push({ category: 'Renal', severity: 'high', icon: 'fa-flask', items: [
+        'Latest serum creatinine and eGFR values?',
+        'Any dialysis history or requirement?',
+        'Ultrasound findings of kidneys?',
+        'Underlying cause of renal condition?'
+      ], context: 'Kidney / renal history detected' });
+    }
+
+    if (combined.includes('asthma') || combined.includes('respiratory') || combined.includes('lung') || combined.includes('copd') || combined.includes('breathless')) {
+      questions.push({ category: 'Respiratory', severity: 'medium', icon: 'fa-lungs', items: [
+        'Frequency and severity of episodes?',
+        'Current medications (inhalers, nebulizers, oral)?',
+        'Latest pulmonary function test (spirometry) results?',
+        'Any hospitalization for acute episodes in last 2 years?'
+      ], context: 'Respiratory / pulmonary history detected' });
+    }
+
+    if (combined.includes('cancer') || combined.includes('tumor') || combined.includes('malignant') || combined.includes('carcinoma') || combined.includes('lump')) {
+      questions.push({ category: 'Oncology', severity: 'critical', icon: 'fa-ribbon', items: [
+        'Exact type, stage (TNM), and grade of cancer?',
+        'Treatment received (surgery, chemotherapy, radiation, immunotherapy)?',
+        'Current remission status and duration since last treatment?',
+        'Latest follow-up reports and tumor marker levels?',
+        'Any family history of similar cancers?'
+      ], context: 'Oncological / malignancy history detected' });
+    }
+
+    if (combined.includes('stroke') || combined.includes('paralysis') || combined.includes('cerebral') || combined.includes('brain')) {
+      questions.push({ category: 'Neurological', severity: 'critical', icon: 'fa-brain', items: [
+        'Type of stroke (ischemic / hemorrhagic) and date?',
+        'Current neurological deficits and recovery status?',
+        'Medications (anticoagulants, antiplatelets)?',
+        'MRI / CT scan findings?',
+        'Rehabilitation status and functional independence?'
+      ], context: 'Neurological / cerebrovascular history detected' });
+    }
+
+    if (combined.includes('liver') || combined.includes('hepatitis') || combined.includes('jaundice') || combined.includes('cirrhosis')) {
+      questions.push({ category: 'Hepatic', severity: 'high', icon: 'fa-flask', items: [
+        'Latest liver function tests (LFT)?',
+        'Hepatitis type and current viral load (if applicable)?',
+        'Ultrasound / Fibroscan findings?',
+        'Alcohol consumption history?',
+        'Any complications (ascites, varices)?'
+      ], context: 'Liver / hepatic history detected' });
+    }
+
+    if (combined.includes('psychiatric') || combined.includes('depression') || combined.includes('anxiety') || combined.includes('mental')) {
+      questions.push({ category: 'Psychiatric', severity: 'medium', icon: 'fa-brain', items: [
+        'Specific diagnosis and duration?',
+        'Current psychiatric medications and dosages?',
+        'Any hospitalizations for psychiatric episodes?',
+        'Current functional status and ability to work?'
+      ], context: 'Psychiatric / mental health history detected' });
+    }
+  });
+
+  // BMI-driven questions
+  if (bmi >= 35) {
+    questions.push({ category: 'Obesity - Comorbidity Screening', severity: 'high', icon: 'fa-weight', items: [
+      'Has the member been screened for Type 2 Diabetes (FBS, HbA1c)?',
+      'Blood pressure readings - any hypertension diagnosis?',
+      'Screening for Obstructive Sleep Apnea (Epworth scale, sleep study)?',
+      'Lipid profile and liver function tests?',
+      'Any weight management program or bariatric surgery consideration?'
+    ], context: `BMI ${bmi} (severe/morbid obesity) - comorbidity screening critical` });
+  } else if (bmi >= 30) {
+    questions.push({ category: 'Obesity - Metabolic Screening', severity: 'medium', icon: 'fa-weight', items: [
+      'Screening for metabolic syndrome?',
+      'Blood pressure and lipid profile status?',
+      'Any lifestyle modifications or weight management plans?'
+    ], context: `BMI ${bmi} (obese) - metabolic screening recommended` });
+  }
+
+  // Age-driven questions
+  if (memberAge > 55) {
+    questions.push({ category: 'Age-Appropriate Screening', severity: 'medium', icon: 'fa-clipboard-list', items: [
+      'Date of last comprehensive health checkup / master health check?',
+      'Cardiac screening (ECG, Stress Test, 2D Echo) results?',
+      'Age-appropriate cancer screening status?',
+      'Bone density (DEXA scan) results - especially for females?',
+      'Blood sugar, kidney function, and liver function panel?'
+    ], context: `Member age ${memberAge} years - comprehensive screening recommended` });
+  }
+
+  // Portability-driven questions
+  nonMedDecls.forEach(decl => {
+    if ((decl.Questions || '').toLowerCase().includes('portability')) {
+      questions.push({ category: 'Portability Assessment', severity: 'high', icon: 'fa-exchange-alt', items: [
+        'Complete claims history with previous insurer (last 4 years)?',
+        'Reason for porting - any claims denied or disputes?',
+        'Waiting periods already served with previous insurer?',
+        'Any conditions excluded or sub-limited by previous insurer?',
+        'Certificate of insurance and no-claim confirmation obtained?'
+      ], context: 'Portability case - previous insurer history is critical' });
+    }
+  });
+
+  return questions;
+};
+
+// ============================================================
+// TeleMER PDF Export - generates printable summary
+// ============================================================
+const exportTeleMERPDF = (responseData, score, followUpQuestions) => {
+  const data = responseData?.response?.data;
+  if (!data) return;
+  const meta = data.MetaData || {};
+  const summary = data.Summary || {};
+  const medDecls = data.YesMedicalDeclarationData || [];
+
+  const severityColor = (sev) => sev === 'critical' ? '#dc2626' : sev === 'high' ? '#ea580c' : '#ca8a04';
+
+  let medDeclsHTML = '';
+  medDecls.forEach((d, i) => {
+    const details = (d.Details || '').replace(/\n/g, '<br/>');
+    medDeclsHTML += '<div style="margin-bottom:16px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#fefce8">' +
+      '<p style="font-weight:600;color:#92400e;margin:0 0 8px">Declaration ' + (i+1) + ': ' + (d.Answer || 'Yes') + '</p>' +
+      '<p style="font-size:13px;color:#374151;margin:0 0 6px"><b>Question:</b> ' + (d.Questions || '').replace(/\n/g, ' ') + '</p>' +
+      '<p style="font-size:12px;color:#6b7280;margin:0"><b>Details:</b><br/>' + details + '</p></div>';
+  });
+
+  let questionsHTML = '';
+  followUpQuestions.forEach(fq => {
+    questionsHTML += '<div style="margin-bottom:14px;padding:10px;border-left:4px solid ' + severityColor(fq.severity) + ';background:#f9fafb;border-radius:4px">' +
+      '<p style="font-weight:600;margin:0 0 6px;color:#1f2937">' + fq.category + '</p>' +
+      '<p style="font-size:11px;color:#6b7280;margin:0 0 6px">' + fq.context + '</p><ul style="margin:0;padding-left:18px">';
+    fq.items.forEach(item => { questionsHTML += '<li style="font-size:12px;color:#374151;margin-bottom:3px">' + item + '</li>'; });
+    questionsHTML += '</ul></div>';
+  });
+
+  let breakdownHTML = '';
+  score.breakdown.forEach(b => {
+    breakdownHTML += '<tr><td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px">' + b.factor + '</td>' +
+      '<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;text-align:center">' + b.points + ' / ' + b.max + '</td>' +
+      '<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:13px">' + b.detail + '</td></tr>';
+  });
+
+  const html = '<!DOCTYPE html><html><head><title>TeleMER Report - ' + (meta['Name of Member'] || meta['Name of the Proposer'] || 'Report') + '</title>' +
+    '<style>body{font-family:Arial,sans-serif;margin:30px;color:#1f2937}h1{color:#1e40af;border-bottom:3px solid #1e40af;padding-bottom:8px}h2{color:#374151;margin-top:28px;border-bottom:1px solid #d1d5db;padding-bottom:6px}.meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px}.meta-item{font-size:13px;padding:4px 0}.meta-label{color:#6b7280;font-weight:600}table{width:100%;border-collapse:collapse;margin-top:8px}th{background:#f3f4f6;padding:8px 10px;text-align:left;font-size:12px;border-bottom:2px solid #d1d5db}@media print{body{margin:15px}}</style></head><body>' +
+    '<div style="text-align:center;margin-bottom:20px"><h1 style="border:none;margin:0">PIVOT UW CoPilot - TeleMER Analysis Report</h1>' +
+    '<p style="color:#6b7280;font-size:13px">Generated: ' + new Date().toLocaleString() + ' | Application: ' + (summary['Application No.'] || 'N/A') + '</p></div>' +
+    '<div style="text-align:center;margin:20px 0;padding:20px;background:#f9fafb;border-radius:12px;border:2px solid ' + score.color + '">' +
+    '<p style="margin:0;font-size:14px;color:#6b7280">PIVOT TeleMER Risk Score</p>' +
+    '<p style="display:inline-block;padding:8px 20px;border-radius:20px;color:#fff;font-size:32px;font-weight:700;background:' + score.color + ';margin:10px 0">' + score.total + ' / 100</p>' +
+    '<p style="margin:0;font-size:16px;font-weight:600;color:' + score.color + '">' + score.level + '</p></div>' +
+    '<h2>Score Breakdown</h2><table><tr><th>Factor</th><th style="text-align:center">Score</th><th>Detail</th></tr>' + breakdownHTML + '</table>' +
+    '<h2>Member Profile</h2><div class="meta-grid">' + Object.entries(meta).map(([k,v]) => '<div class="meta-item"><span class="meta-label">' + k + ':</span> ' + (v || 'N/A') + '</div>').join('') + '</div>' +
+    '<h2>Medical Declarations (' + medDecls.length + ')</h2>' + medDeclsHTML +
+    '<h2>Suggested Follow-up Questions (' + followUpQuestions.length + ' areas)</h2>' + questionsHTML +
+    '<div style="margin-top:30px;padding-top:10px;border-top:2px solid #e5e7eb;font-size:11px;color:#9ca3af;text-align:center">PIVOT UW CoPilot by Attributum | Confidential - For Underwriting Use Only</div></body></html>';
+
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, '_blank');
+  if (win) { win.onload = () => { setTimeout(() => win.print(), 500); }; }
+};
+
 const App = () => {
   const [page, setPage] = useState('home');
   const [file, setFile] = useState(null);
@@ -424,6 +766,8 @@ const App = () => {
   const [uwLoading, setUwLoading] = useState(false);
   const [uwResponseData, setUwResponseData] = useState(null);
   const [uwFileError, setUwFileError] = useState(null);
+  const [uwShowRaw, setUwShowRaw] = useState(false);
+  const [uwExpandedDecl, setUwExpandedDecl] = useState(null);
 
   // Session & permissions state (Phase 2)
   const [sessionInfo, setSessionInfo] = useState(null);
@@ -2003,6 +2347,30 @@ const getSumInsuredFromData = (responseData) => {
   }
 
   if (page === 'underwriting') {
+    const uwData = uwResponseData?.response?.data;
+    const uwScore = uwResponseData ? computeTeleMERScore(uwResponseData) : null;
+    const uwQuestions = uwResponseData ? generateFollowUpQuestions(uwResponseData) : [];
+    const uwMeta = uwData?.MetaData || {};
+    const uwSummary = uwData?.Summary || {};
+    const uwMedDecls = uwData?.YesMedicalDeclarationData || [];
+    const uwNonMedDecls = uwData?.YesNonMedicalDeclarationData || [];
+
+    // SVG Ring Chart component for score
+    const ScoreRing = ({ score, color, size }) => {
+      const radius = (size || 80) / 2 - 8;
+      const circumference = 2 * Math.PI * radius;
+      const offset = circumference - (score / 100) * circumference;
+      const center = (size || 80) / 2;
+      return (
+        <svg width={size || 80} height={size || 80} style={{transform: 'rotate(-90deg)'}}>
+          <circle cx={center} cy={center} r={radius} fill="none" stroke="#e5e7eb" strokeWidth="6" />
+          <circle cx={center} cy={center} r={radius} fill="none" stroke={color} strokeWidth="6"
+            strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round"
+            style={{transition: 'stroke-dashoffset 1s ease'}} />
+        </svg>
+      );
+    };
+
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white shadow-sm border-b">
@@ -2019,8 +2387,8 @@ const getSumInsuredFromData = (responseData) => {
                 </div>
               </div>
               <div className="flex-1 text-center">
-                <h1 className="text-3xl font-bold text-gray-800">PIVOT Insurance Automation Suite</h1>
-                <p className="text-sm text-gray-600">Live Product Demos & Enterprise Sandbox</p>
+                <h1 className="text-3xl font-bold text-gray-800">PIVOT UW CoPilot (TeleMER)</h1>
+                <p className="text-sm text-gray-600">AI-Assisted Underwriting with Automated Risk Assessment</p>
               </div>
               <div className="flex items-center justify-end space-x-6 w-56">
                 <div className="flex items-center space-x-2">
@@ -2036,36 +2404,53 @@ const getSumInsuredFromData = (responseData) => {
           </div>
         </header>
 
-        <div className="container mx-auto px-4 py-8">
+        <div className="container mx-auto px-4 py-6">
           <div className="max-w-7xl mx-auto">
-            <div className="flex justify-between items-center mb-8">
+            {/* Top Action Bar */}
+            <div className="flex justify-between items-center mb-6">
               <div>
-                <h1 className="text-3xl font-bold text-gray-800">PIVOT Underwriting CoPilot (TeleMER)</h1>
-                <p className="text-xs text-gray-500 mt-1">AI-assisted underwriting with automated risk assessment</p>
+                <p className="text-xs text-gray-500 mt-1">Upload TeleMER documents for AI-powered medical risk analysis</p>
               </div>
-              <div className="space-x-4">
+              <div className="flex space-x-3">
+                {uwResponseData && (
+                  <>
+                    <button onClick={() => exportTeleMERPDF(uwResponseData, uwScore, uwQuestions)}
+                      className="px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+                      <i className="fas fa-file-pdf mr-1"></i> Export PDF
+                    </button>
+                    <button onClick={() => setUwShowRaw(!uwShowRaw)}
+                      className="px-3 py-2 border border-gray-300 text-gray-600 rounded text-sm hover:bg-gray-50">
+                      <i className="fas fa-code mr-1"></i> {uwShowRaw ? 'Hide' : 'Show'} Raw JSON
+                    </button>
+                    <button onClick={() => { setUwResponseData(null); setUwFile(null); setUwFileError(null); setUwShowRaw(false); setUwExpandedDecl(null); }}
+                      className="px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700">
+                      <i className="fas fa-plus mr-1"></i> New Analysis
+                    </button>
+                  </>
+                )}
                 <button onClick={() => { setPage('home'); setUwResponseData(null); setUwFile(null); }}
-                  className="px-4 py-2 border border-gray-300 text-gray-600 rounded hover:bg-gray-50">
-                  ← Back to Home
+                  className="px-3 py-2 border border-gray-300 text-gray-600 rounded text-sm hover:bg-gray-50">
+                  <i className="fas fa-arrow-left mr-1"></i> Back to Home
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="space-y-4">
-                <div className="bg-white rounded-lg shadow-lg p-6">
-                  <h2 className="text-xl font-semibold mb-4">Upload Medical Document for Underwriting Analysis</h2>
+            {/* Upload Form - always visible when no results */}
+            {!uwResponseData && (
+              <div className="max-w-2xl mx-auto">
+                <div className="bg-white rounded-xl shadow-lg p-8">
+                  <div className="text-center mb-6">
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <i className="fas fa-stethoscope text-green-600 text-2xl"></i>
+                    </div>
+                    <h2 className="text-2xl font-bold text-gray-800">Upload TeleMER Document</h2>
+                    <p className="text-sm text-gray-500 mt-2">Upload a medical examination report for AI-powered underwriting analysis</p>
+                  </div>
                   <form onSubmit={handleUwUpload}>
-                    <div>
-                      <input type="file" onChange={handleUwFileChange} className="w-full p-2 border rounded" accept=".pdf,.jpg,.jpeg,.png" />
-                      <p className="text-xs text-gray-500 mt-3 mb-4">Supported formats: PDF, JPG, JPEG, PNG</p>
-                    <div className="mt-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Insurance Company</label>
-                      <select
-                        value={uwCompany}
-                        onChange={(e) => setUwCompany(e.target.value)}
-                        className="w-full p-2 border border-gray-300 rounded-lg text-sm"
-                      >
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Insurance Company</label>
+                      <select value={uwCompany} onChange={(e) => setUwCompany(e.target.value)}
+                        className="w-full p-3 border border-gray-300 rounded-lg text-sm">
                         <option value="telemer_hdfcergo">HDFC Ergo</option>
                         <option value="telemer_starhealth">Star Health</option>
                         <option value="telemer_icicilombard">ICICI Lombard</option>
@@ -2074,98 +2459,247 @@ const getSumInsuredFromData = (responseData) => {
                         <option value="telemer_carehealth">Care Health</option>
                       </select>
                     </div>
-                      {uwFileError && (
-                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
-                          <p className="text-xs text-red-600">{uwFileError}</p>
-                        </div>
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Medical Document</label>
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors"
+                        style={{cursor: 'pointer'}} onClick={() => document.getElementById('uw-file-input')?.click()}>
+                        <i className="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
+                        <p className="text-sm text-gray-600">{uwFile ? uwFile.name : 'Click to upload or drag and drop'}</p>
+                        <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG up to 10MB</p>
+                      </div>
+                      <input id="uw-file-input" type="file" onChange={handleUwFileChange} className="hidden" accept=".pdf,.jpg,.jpeg,.png" />
+                    </div>
+                    {uwFileError && (
+                      <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-sm text-red-600"><i className="fas fa-exclamation-circle mr-1"></i> {uwFileError}</p>
+                      </div>
+                    )}
+                    <button type="submit" disabled={!uwFile || uwLoading}
+                      className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
+                      {uwLoading ? (
+                        <span><i className="fas fa-spinner fa-spin mr-2"></i>Analysing Document...</span>
+                      ) : (
+                        <span><i className="fas fa-search mr-2"></i>Analyse Document</span>
                       )}
-                    </div>
-                    <div className="flex space-x-3">
-                      <button type="submit" disabled={!uwFile || uwLoading}
-                        className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex-1">
-                        {uwLoading ? 'Analysing...' : 'Analyse Document'}
-                      </button>
-                    </div>
+                    </button>
                   </form>
                 </div>
+              </div>
+            )}
 
-                {uwResponseData && (
-                  <div className="bg-white rounded-lg shadow-lg p-6">
-                    <h3 className="text-xl font-semibold mb-4">Underwriting Analysis Summary</h3>
-                    <div className="space-y-4">
-                      <div>
-                        <h4 className="font-medium text-gray-800 mb-3">Proposer Details</h4>
-                        <div className="text-sm space-y-2">
-                          {uwResponseData?.response?.data?.proposer_details && Object.entries(uwResponseData.response.data.proposer_details).map(([key, value]) => (
-                            <div key={key} className="flex justify-between">
-                              <span className="text-gray-600 capitalize">{key.replace(/_/g, ' ')}:</span>
-                              <span className="font-medium">{String(value || 'Not Available')}</span>
-                            </div>
-                          ))}
+            {/* === RESULTS SECTION === */}
+            {uwResponseData && (
+              <div className="space-y-6">
+
+                {/* Risk Score Banner */}
+                <div className="bg-white rounded-xl shadow-lg p-6" style={{borderLeft: `6px solid ${uwScore.color}`}}>
+                  <div className="flex items-center justify-between flex-wrap gap-4">
+                    {/* Score Ring + Label */}
+                    <div className="flex items-center space-x-4">
+                      <div style={{position: 'relative', width: 90, height: 90}}>
+                        <ScoreRing score={uwScore.total} color={uwScore.color} size={90} />
+                        <div style={{position: 'absolute', top: 0, left: 0, width: 90, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                          <span style={{fontSize: '22px', fontWeight: 700, color: uwScore.color}}>{uwScore.total}</span>
                         </div>
                       </div>
                       <div>
-                        <h4 className="font-medium text-gray-800 mb-3">Policy & Coverage Details</h4>
-                        <div className="text-sm space-y-2">
-                          {uwResponseData?.response?.data?.policy_and_coverage_details && Object.entries(uwResponseData.response.data.policy_and_coverage_details).map(([key, value]) => (
-                            <div key={key} className="flex justify-between">
-                              <span className="text-gray-600 capitalize">{key.replace(/_/g, ' ')}:</span>
-                              <span className="font-medium text-right ml-4">{String(value || 'Not Available')}</span>
+                        <p className="text-xs text-gray-500 uppercase font-semibold">PIVOT TeleMER Risk Score</p>
+                        <p className="text-xl font-bold" style={{color: uwScore.color}}>{uwScore.level}</p>
+                        <p className="text-xs text-gray-400">Application: {uwSummary['Application No.'] || 'N/A'}</p>
+                      </div>
+                    </div>
+                    {/* Key Metrics */}
+                    <div className="flex space-x-6">
+                      <div className="text-center px-4 py-2 rounded-lg" style={{background: uwScore.bmi >= 30 ? '#fef2f2' : '#f0fdf4'}}>
+                        <p className="text-xs text-gray-500">BMI</p>
+                        <p className="text-lg font-bold" style={{color: uwScore.bmi >= 30 ? '#dc2626' : '#16a34a'}}>{uwScore.bmi || 'N/A'}</p>
+                        <p className="text-xs" style={{color: uwScore.bmi >= 30 ? '#dc2626' : '#16a34a'}}>{uwSummary.PIVOT_BMI_Category || ''}</p>
+                      </div>
+                      <div className="text-center px-4 py-2 rounded-lg" style={{background: uwSummary.PIVOT_Medical_Declarations_Category === 'Adverse' ? '#fef2f2' : '#f0fdf4'}}>
+                        <p className="text-xs text-gray-500">Medical</p>
+                        <p className="text-lg font-bold" style={{color: uwSummary.PIVOT_Medical_Declarations_Category === 'Adverse' ? '#dc2626' : '#16a34a'}}>
+                          {uwSummary.PIVOT_Medical_Declarations_Category || 'N/A'}
+                        </p>
+                        <p className="text-xs text-gray-500">{uwMedDecls.length} declaration{uwMedDecls.length !== 1 ? 's' : ''}</p>
+                      </div>
+                      <div className="text-center px-4 py-2 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500">Age</p>
+                        <p className="text-lg font-bold text-gray-800">{uwScore.age || 'N/A'}</p>
+                        <p className="text-xs text-gray-500">{uwMeta.Gender || ''}</p>
+                      </div>
+                      <div className="text-center px-4 py-2 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500">Pages</p>
+                        <p className="text-lg font-bold text-gray-800">{uwSummary.Pages || 'N/A'}</p>
+                        <p className="text-xs text-gray-500">Processed</p>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Score Breakdown Bar */}
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <div className="flex items-center space-x-1" style={{height: 8, borderRadius: 4, overflow: 'hidden', background: '#e5e7eb'}}>
+                      {uwScore.breakdown.map((b, i) => (
+                        <div key={i} style={{width: `${b.max}%`, height: '100%', background: b.points > 0 ? uwScore.color : 'transparent', opacity: 0.3 + (b.points / b.max) * 0.7, borderRadius: 2}} title={`${b.factor}: ${b.points}/${b.max}`}></div>
+                      ))}
+                    </div>
+                    <div className="flex justify-between mt-2 text-xs text-gray-500">
+                      {uwScore.breakdown.map((b, i) => (
+                        <span key={i} title={b.detail}><i className={`fas ${b.icon} mr-1`}></i>{b.factor}: {b.points}/{b.max}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Member Profile Card */}
+                <div className="bg-white rounded-xl shadow-lg p-6">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4"><i className="fas fa-user-circle mr-2 text-blue-600"></i>Member Profile</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {Object.entries(uwMeta).map(([key, value]) => (
+                      <div key={key} className="bg-gray-50 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 font-medium">{key}</p>
+                        <p className="text-sm font-semibold text-gray-800 mt-1">{String(value || 'N/A').replace(/\n/g, ', ')}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Two-Column: Declarations + Follow-up Questions */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Left: Medical & Non-Medical Declarations */}
+                  <div className="space-y-4">
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                        <i className="fas fa-notes-medical mr-2 text-red-600"></i>Medical Declarations ({uwMedDecls.length})
+                      </h3>
+                      {uwMedDecls.length === 0 ? (
+                        <p className="text-sm text-gray-500 italic">No medical declarations reported</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {uwMedDecls.map((decl, idx) => (
+                            <div key={idx} className="border border-amber-200 rounded-lg overflow-hidden" style={{background: '#fffbeb'}}>
+                              <button className="w-full text-left p-4 flex items-center justify-between hover:bg-amber-50 transition-colors"
+                                onClick={() => setUwExpandedDecl(uwExpandedDecl === idx ? null : idx)}>
+                                <div className="flex items-center space-x-3">
+                                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{background: '#d97706', minWidth: 32}}>
+                                    {idx + 1}
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-semibold text-gray-800">{(decl.Questions || '').replace(/\n/g, ' ').substring(0, 80)}{(decl.Questions || '').length > 80 ? '...' : ''}</p>
+                                    <p className="text-xs text-amber-700 mt-1">Answer: {decl.Answer || 'Yes'}</p>
+                                  </div>
+                                </div>
+                                <i className={`fas fa-chevron-${uwExpandedDecl === idx ? 'up' : 'down'} text-gray-400`}></i>
+                              </button>
+                              {uwExpandedDecl === idx && (
+                                <div className="px-4 pb-4 border-t border-amber-200">
+                                  <div className="mt-3 p-3 bg-white rounded-lg">
+                                    <p className="text-xs font-semibold text-gray-600 mb-2">Full Question:</p>
+                                    <p className="text-sm text-gray-700 whitespace-pre-line">{decl.Questions}</p>
+                                    <p className="text-xs font-semibold text-gray-600 mt-3 mb-2">Detailed Response:</p>
+                                    <p className="text-sm text-gray-700 whitespace-pre-line">{decl.Details}</p>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
-                        </div>
-                      </div>
-                      {uwResponseData?.response?.data?.insured_details && (
-                        <div>
-                          <h4 className="font-medium text-gray-800 mb-3">Insured Members</h4>
-                          <div className="text-xs overflow-x-auto">
-                            <table className="w-full border-collapse">
-                              <thead>
-                                <tr className="border-b bg-gray-50">
-                                  <th className="text-left py-2 px-2 font-medium text-gray-700">Name</th>
-                                  <th className="text-left py-2 px-2 font-medium text-gray-700">Relationship</th>
-                                  <th className="text-left py-2 px-2 font-medium text-gray-700">Gender</th>
-                                  <th className="text-left py-2 px-2 font-medium text-gray-700">DOB / Age</th>
-                                  <th className="text-left py-2 px-2 font-medium text-gray-700">PED</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {uwResponseData.response.data.insured_details.map((insured, index) => (
-                                  <tr key={index} className="border-b">
-                                    <td className="py-2 px-2 font-medium">{insured?.insured_name || 'N/A'}</td>
-                                    <td className="py-2 px-2">{insured?.relationship || 'N/A'}</td>
-                                    <td className="py-2 px-2">{insured?.gender || 'N/A'}</td>
-                                    <td className="py-2 px-2">{insured?.dob || insured?.age || 'N/A'}</td>
-                                    <td className="py-2 px-2">{insured?.declared_ped || 'None'}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
                         </div>
                       )}
+                    </div>
+
+                    {/* Non-Medical Declarations */}
+                    {uwNonMedDecls.length > 0 && (
+                      <div className="bg-white rounded-xl shadow-lg p-6">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                          <i className="fas fa-clipboard-list mr-2 text-blue-600"></i>Non-Medical Declarations ({uwNonMedDecls.length})
+                        </h3>
+                        <div className="space-y-3">
+                          {uwNonMedDecls.map((decl, idx) => (
+                            <div key={idx} className="border border-blue-200 rounded-lg p-4" style={{background: '#eff6ff'}}>
+                              <p className="text-sm font-semibold text-gray-800">{(decl.Questions || '').replace(/\n/g, ' ')}</p>
+                              <p className="text-xs text-blue-700 mt-1">Answer: {decl.Answer || 'Yes'}</p>
+                              <p className="text-sm text-gray-600 mt-2 whitespace-pre-line">{decl.Details}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right: AI Follow-up Questions */}
+                  <div className="space-y-4">
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                        <i className="fas fa-lightbulb mr-2 text-amber-500"></i>AI-Suggested Follow-up Questions
+                      </h3>
+                      <p className="text-xs text-gray-500 mb-4">Context-aware questions generated from the medical analysis for the underwriter</p>
+                      {uwQuestions.length === 0 ? (
+                        <p className="text-sm text-gray-500 italic">No additional questions identified</p>
+                      ) : (
+                        <div className="space-y-4">
+                          {uwQuestions.map((fq, idx) => {
+                            const sevColors = { critical: {bg: '#fef2f2', border: '#dc2626', text: '#991b1b', badge: '#dc2626'},
+                              high: {bg: '#fff7ed', border: '#ea580c', text: '#9a3412', badge: '#ea580c'},
+                              medium: {bg: '#fefce8', border: '#ca8a04', text: '#854d0e', badge: '#ca8a04'} };
+                            const sc = sevColors[fq.severity] || sevColors.medium;
+                            return (
+                              <div key={idx} className="rounded-lg p-4" style={{background: sc.bg, borderLeft: `4px solid ${sc.border}`}}>
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center space-x-2">
+                                    <i className={`fas ${fq.icon}`} style={{color: sc.border}}></i>
+                                    <span className="text-sm font-semibold" style={{color: sc.text}}>{fq.category}</span>
+                                  </div>
+                                  <span className="text-xs px-2 py-1 rounded-full text-white font-medium" style={{background: sc.badge}}>
+                                    {fq.severity}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-500 mb-2 italic">{fq.context}</p>
+                                <ul className="space-y-1">
+                                  {fq.items.map((item, i) => (
+                                    <li key={i} className="text-sm text-gray-700 flex items-start">
+                                      <span className="text-xs mr-2 mt-1" style={{color: sc.border}}>&#9679;</span>
+                                      {item}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Score Breakdown Detail */}
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4"><i className="fas fa-chart-bar mr-2 text-purple-600"></i>Score Breakdown</h3>
+                      <div className="space-y-3">
+                        {uwScore.breakdown.map((b, i) => (
+                          <div key={i}>
+                            <div className="flex justify-between text-sm mb-1">
+                              <span className="text-gray-600"><i className={`fas ${b.icon} mr-2`}></i>{b.factor}</span>
+                              <span className="font-semibold text-gray-800">{b.points} / {b.max}</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full" style={{height: 6}}>
+                              <div className="rounded-full" style={{width: `${b.max > 0 ? (b.points / b.max) * 100 : 0}%`, height: 6, background: uwScore.color, transition: 'width 0.8s ease'}}></div>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1">{b.detail}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Collapsible Raw JSON */}
+                {uwShowRaw && (
+                  <div className="bg-white rounded-xl shadow-lg p-6">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4"><i className="fas fa-code mr-2 text-gray-600"></i>Raw API Response</h3>
+                    <div className="bg-gray-900 rounded-lg p-4 overflow-auto" style={{maxHeight: 500}}>
+                      <pre className="text-xs text-green-400 whitespace-pre-wrap">{JSON.stringify(uwResponseData, null, 2)}</pre>
                     </div>
                   </div>
                 )}
-              </div>
 
-              <div className="space-y-4">
-                <div className="bg-white rounded-lg shadow-lg p-6">
-                  <h3 className="text-xl font-semibold mb-4">TeleMER Raw Response</h3>
-                  {!uwResponseData ? (
-                    <div className="text-center py-12">
-                      <i className="fas fa-clipboard-check text-4xl text-gray-300 mb-4"></i>
-                      <p className="text-gray-500">Upload a medical document to see AI-powered underwriting analysis</p>
-                      <p className="text-sm text-gray-400 mt-2">The system will extract and analyse medical information for underwriting decisions</p>
-                    </div>
-                  ) : (
-                    <div className="bg-gray-50 rounded p-4 overflow-auto max-h-screen">
-                      <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(uwResponseData, null, 2)}</pre>
-                    </div>
-                  )}
-                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

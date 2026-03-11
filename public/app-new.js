@@ -406,42 +406,496 @@ const ScoreConfigPage = ({ setPage }) => {
 };
 
 // ============================================================
-// TeleMER Risk Scoring Engine
+// TeleMER Configurable Score Settings (mirrors Portability pattern)
+// ============================================================
+const TELEMER_SCORE_SETTINGS = {
+  bmi: {
+    enabled: true,
+    maxPoints: 25,
+    morbidThreshold: 40,
+    severeThreshold: 35,
+    obeseThreshold: 30,
+    overweightThreshold: 25,
+    underweightThreshold: 18.5
+  },
+  medicalDeclarations: {
+    enabled: true,
+    maxPoints: 30,
+    pointsPerCondition: 8,
+    surgicalBonus: 4
+  },
+  age: {
+    enabled: true,
+    maxPoints: 20,
+    tier1Age: 30,
+    tier1Points: 5,
+    tier2Age: 40,
+    tier2Points: 10,
+    tier3Age: 50,
+    tier3Points: 15,
+    tier4Age: 60,
+    tier4Points: 20
+  },
+  medicalCategory: {
+    enabled: true,
+    maxPoints: 15,
+    adversePoints: 15
+  },
+  nonMedicalFlags: {
+    enabled: true,
+    maxPoints: 10,
+    portabilityPoints: 6,
+    otherFlagPoints: 2
+  }
+};
+
+const loadTeleMERSettings = () => {
+  try {
+    const saved = localStorage.getItem('telemerScoreSettings');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        bmi: { ...TELEMER_SCORE_SETTINGS.bmi, ...parsed.bmi },
+        medicalDeclarations: { ...TELEMER_SCORE_SETTINGS.medicalDeclarations, ...parsed.medicalDeclarations },
+        age: { ...TELEMER_SCORE_SETTINGS.age, ...parsed.age },
+        medicalCategory: { ...TELEMER_SCORE_SETTINGS.medicalCategory, ...parsed.medicalCategory },
+        nonMedicalFlags: { ...TELEMER_SCORE_SETTINGS.nonMedicalFlags, ...parsed.nonMedicalFlags }
+      };
+    }
+  } catch (e) {}
+  return TELEMER_SCORE_SETTINGS;
+};
+
+// ============================================================
+// TeleMER Score Settings Page Component
+// ============================================================
+const TeleMERConfigPage = ({ setPage }) => {
+  const [settings, setSettings] = useState(TELEMER_SCORE_SETTINGS);
+
+  useEffect(() => {
+    setSettings(loadTeleMERSettings());
+  }, []);
+
+  const handleChange = (section, field, value) => {
+    setSettings(prev => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [field]: field === 'enabled' ? value : (parseInt(value) || 0)
+      }
+    }));
+  };
+
+  const handleSave = () => {
+    localStorage.setItem('telemerScoreSettings', JSON.stringify(settings));
+    alert('TeleMER score settings saved successfully!');
+  };
+
+  const handleReset = () => {
+    setSettings(TELEMER_SCORE_SETTINGS);
+    localStorage.setItem('telemerScoreSettings', JSON.stringify(TELEMER_SCORE_SETTINGS));
+    alert('TeleMER score settings reset to defaults!');
+  };
+
+  const totalMax = (settings.bmi.enabled ? settings.bmi.maxPoints : 0)
+    + (settings.medicalDeclarations.enabled ? settings.medicalDeclarations.maxPoints : 0)
+    + (settings.age.enabled ? settings.age.maxPoints : 0)
+    + (settings.medicalCategory.enabled ? settings.medicalCategory.maxPoints : 0)
+    + (settings.nonMedicalFlags.enabled ? settings.nonMedicalFlags.maxPoints : 0);
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white shadow-sm border-b">
+        <div className="container mx-auto px-4 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-6 w-56">
+              <div className="flex items-center space-x-2">
+                <img src="/logos/attributum-logo.png" alt="Attributum Logo" className="w-50 h-20 rounded-lg object-contain"
+                  style={{maxHeight: '56px', maxWidth: '180px', width: 'auto', height: 'auto', objectFit: 'contain'}}
+                  onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }} />
+                <div className="w-50 h-20 bg-blue-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                  <span className="text-white font-bold text-xl">A</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 text-center">
+              <h1 className="text-2xl font-bold text-gray-800 mb-1">PIVOT TeleMER Score Settings</h1>
+              <p className="text-sm text-gray-600">Configure underwriting risk scoring weights and thresholds</p>
+            </div>
+            <div className="flex items-center justify-end space-x-6 w-56">
+              <div className="flex items-center space-x-2">
+                <img src="/logos/pivot-logo.png" alt="PIVOT Logo" className="w-40 h-20 rounded-lg object-contain"
+                  style={{maxHeight: '56px', maxWidth: '160px', width: 'auto', height: 'auto', objectFit: 'contain'}}
+                  onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }} />
+                <div className="w-40 h-20 bg-purple-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                  <span className="text-white font-bold text-xl">P</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="container mx-auto px-4 py-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="mb-4 flex justify-between items-center">
+            <button onClick={() => setPage('underwriting')}
+              className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 text-sm">
+              <i className="fas fa-arrow-left mr-1"></i> Back to TeleMER
+            </button>
+            <div className="text-sm text-gray-500">
+              Total possible score: <span className="font-bold text-gray-800">{totalMax}</span> / 100
+            </div>
+          </div>
+
+          {/* Section 1: BMI Factor */}
+          <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-gray-800"><i className="fas fa-weight mr-2 text-blue-600"></i>BMI Factor</h2>
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input type="checkbox" checked={settings.bmi.enabled} onChange={(e) => handleChange('bmi', 'enabled', e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded" />
+                <span className="text-sm text-gray-600">Enabled</span>
+              </label>
+            </div>
+            {settings.bmi.enabled && (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">Max Points</label>
+                    <span className="text-sm text-gray-500">{settings.bmi.maxPoints}</span>
+                  </div>
+                  <input type="number" min="0" max="100" value={settings.bmi.maxPoints}
+                    onChange={(e) => handleChange('bmi', 'maxPoints', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" />
+                  <p className="text-xs text-gray-500 mt-1">Maximum points for BMI risk factor (default 25)</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Morbid Obesity Threshold</label>
+                    <input type="number" min="0" step="0.1" value={settings.bmi.morbidThreshold}
+                      onChange={(e) => handleChange('bmi', 'morbidThreshold', e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded text-sm mt-1" />
+                    <p className="text-xs text-gray-500 mt-1">BMI &ge; this = full points (default 40)</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Severe Obesity Threshold</label>
+                    <input type="number" min="0" step="0.1" value={settings.bmi.severeThreshold}
+                      onChange={(e) => handleChange('bmi', 'severeThreshold', e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded text-sm mt-1" />
+                    <p className="text-xs text-gray-500 mt-1">BMI &ge; this = 88% points (default 35)</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Obese Threshold</label>
+                    <input type="number" min="0" step="0.1" value={settings.bmi.obeseThreshold}
+                      onChange={(e) => handleChange('bmi', 'obeseThreshold', e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded text-sm mt-1" />
+                    <p className="text-xs text-gray-500 mt-1">BMI &ge; this = 72% points (default 30)</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Overweight Threshold</label>
+                    <input type="number" min="0" step="0.1" value={settings.bmi.overweightThreshold}
+                      onChange={(e) => handleChange('bmi', 'overweightThreshold', e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded text-sm mt-1" />
+                    <p className="text-xs text-gray-500 mt-1">BMI &ge; this = 48% points (default 25)</p>
+                  </div>
+                </div>
+                <div>
+                  <div className="bg-gray-50 border border-gray-200 rounded p-3">
+                    <p className="text-xs text-gray-600 font-medium mb-1">Scoring Logic:</p>
+                    <ul className="text-xs text-gray-500 space-y-1">
+                      <li>BMI &ge; {settings.bmi.morbidThreshold} (Morbidly Obese) = {settings.bmi.maxPoints} pts</li>
+                      <li>BMI &ge; {settings.bmi.severeThreshold} (Severely Obese) = {Math.round(settings.bmi.maxPoints * 0.88)} pts</li>
+                      <li>BMI &ge; {settings.bmi.obeseThreshold} (Obese) = {Math.round(settings.bmi.maxPoints * 0.72)} pts</li>
+                      <li>BMI &ge; {settings.bmi.overweightThreshold} (Overweight) = {Math.round(settings.bmi.maxPoints * 0.48)} pts</li>
+                      <li>BMI &lt; {settings.bmi.underweightThreshold} (Underweight) = {Math.round(settings.bmi.maxPoints * 0.40)} pts</li>
+                      <li>BMI {settings.bmi.underweightThreshold} - {settings.bmi.overweightThreshold} (Normal) = 0 pts</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Medical Declarations */}
+          <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-gray-800"><i className="fas fa-notes-medical mr-2 text-red-600"></i>Medical Declarations</h2>
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input type="checkbox" checked={settings.medicalDeclarations.enabled} onChange={(e) => handleChange('medicalDeclarations', 'enabled', e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded" />
+                <span className="text-sm text-gray-600">Enabled</span>
+              </label>
+            </div>
+            {settings.medicalDeclarations.enabled && (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">Max Points</label>
+                    <span className="text-sm text-gray-500">{settings.medicalDeclarations.maxPoints}</span>
+                  </div>
+                  <input type="number" min="0" max="100" value={settings.medicalDeclarations.maxPoints}
+                    onChange={(e) => handleChange('medicalDeclarations', 'maxPoints', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" />
+                  <p className="text-xs text-gray-500 mt-1">Maximum points for medical declarations (default 30)</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Points per Condition</label>
+                    <input type="number" min="0" max="30" value={settings.medicalDeclarations.pointsPerCondition}
+                      onChange={(e) => handleChange('medicalDeclarations', 'pointsPerCondition', e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded text-sm mt-1" />
+                    <p className="text-xs text-gray-500 mt-1">Points added per "Yes" medical declaration (default 8)</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Surgical Treatment Bonus</label>
+                    <input type="number" min="0" max="20" value={settings.medicalDeclarations.surgicalBonus}
+                      onChange={(e) => handleChange('medicalDeclarations', 'surgicalBonus', e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded text-sm mt-1" />
+                    <p className="text-xs text-gray-500 mt-1">Extra points per condition treated surgically (default 4)</p>
+                  </div>
+                </div>
+                <div className="bg-gray-50 border border-gray-200 rounded p-3">
+                  <p className="text-xs text-gray-600 font-medium mb-1">Scoring Logic:</p>
+                  <p className="text-xs text-gray-500">Score = min({settings.medicalDeclarations.maxPoints}, conditions x {settings.medicalDeclarations.pointsPerCondition} + surgical_count x {settings.medicalDeclarations.surgicalBonus})</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section 3: Age Factor */}
+          <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-gray-800"><i className="fas fa-user-clock mr-2 text-purple-600"></i>Age Factor</h2>
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input type="checkbox" checked={settings.age.enabled} onChange={(e) => handleChange('age', 'enabled', e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded" />
+                <span className="text-sm text-gray-600">Enabled</span>
+              </label>
+            </div>
+            {settings.age.enabled && (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">Max Points</label>
+                    <span className="text-sm text-gray-500">{settings.age.maxPoints}</span>
+                  </div>
+                  <input type="number" min="0" max="100" value={settings.age.maxPoints}
+                    onChange={(e) => handleChange('age', 'maxPoints', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" />
+                  <p className="text-xs text-gray-500 mt-1">Maximum points for age risk factor (default 20)</p>
+                </div>
+                <div className="bg-gray-50 border border-gray-200 rounded p-3">
+                  <p className="text-xs text-gray-600 font-medium mb-2">Age Tiers:</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-gray-500">Age &gt; {settings.age.tier4Age}</label>
+                      <div className="flex items-center space-x-2 mt-1">
+                        <input type="number" min="0" max="100" value={settings.age.tier4Age}
+                          onChange={(e) => handleChange('age', 'tier4Age', e.target.value)}
+                          className="w-20 p-1 border border-gray-300 rounded text-xs" />
+                        <span className="text-xs text-gray-400">yrs =</span>
+                        <input type="number" min="0" max="100" value={settings.age.tier4Points}
+                          onChange={(e) => handleChange('age', 'tier4Points', e.target.value)}
+                          className="w-16 p-1 border border-gray-300 rounded text-xs" />
+                        <span className="text-xs text-gray-400">pts</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500">Age &gt; {settings.age.tier3Age}</label>
+                      <div className="flex items-center space-x-2 mt-1">
+                        <input type="number" min="0" max="100" value={settings.age.tier3Age}
+                          onChange={(e) => handleChange('age', 'tier3Age', e.target.value)}
+                          className="w-20 p-1 border border-gray-300 rounded text-xs" />
+                        <span className="text-xs text-gray-400">yrs =</span>
+                        <input type="number" min="0" max="100" value={settings.age.tier3Points}
+                          onChange={(e) => handleChange('age', 'tier3Points', e.target.value)}
+                          className="w-16 p-1 border border-gray-300 rounded text-xs" />
+                        <span className="text-xs text-gray-400">pts</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500">Age &gt; {settings.age.tier2Age}</label>
+                      <div className="flex items-center space-x-2 mt-1">
+                        <input type="number" min="0" max="100" value={settings.age.tier2Age}
+                          onChange={(e) => handleChange('age', 'tier2Age', e.target.value)}
+                          className="w-20 p-1 border border-gray-300 rounded text-xs" />
+                        <span className="text-xs text-gray-400">yrs =</span>
+                        <input type="number" min="0" max="100" value={settings.age.tier2Points}
+                          onChange={(e) => handleChange('age', 'tier2Points', e.target.value)}
+                          className="w-16 p-1 border border-gray-300 rounded text-xs" />
+                        <span className="text-xs text-gray-400">pts</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500">Age &gt; {settings.age.tier1Age}</label>
+                      <div className="flex items-center space-x-2 mt-1">
+                        <input type="number" min="0" max="100" value={settings.age.tier1Age}
+                          onChange={(e) => handleChange('age', 'tier1Age', e.target.value)}
+                          className="w-20 p-1 border border-gray-300 rounded text-xs" />
+                        <span className="text-xs text-gray-400">yrs =</span>
+                        <input type="number" min="0" max="100" value={settings.age.tier1Points}
+                          onChange={(e) => handleChange('age', 'tier1Points', e.target.value)}
+                          className="w-16 p-1 border border-gray-300 rounded text-xs" />
+                        <span className="text-xs text-gray-400">pts</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section 4: PIVOT Medical Category */}
+          <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-gray-800"><i className="fas fa-file-medical mr-2 text-amber-600"></i>PIVOT Medical Category</h2>
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input type="checkbox" checked={settings.medicalCategory.enabled} onChange={(e) => handleChange('medicalCategory', 'enabled', e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded" />
+                <span className="text-sm text-gray-600">Enabled</span>
+              </label>
+            </div>
+            {settings.medicalCategory.enabled && (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">Max Points</label>
+                    <span className="text-sm text-gray-500">{settings.medicalCategory.maxPoints}</span>
+                  </div>
+                  <input type="number" min="0" max="100" value={settings.medicalCategory.maxPoints}
+                    onChange={(e) => handleChange('medicalCategory', 'maxPoints', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" />
+                  <p className="text-xs text-gray-500 mt-1">Maximum points for PIVOT medical category (default 15)</p>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">Adverse Category Points</label>
+                    <span className="text-sm text-gray-500">{settings.medicalCategory.adversePoints}</span>
+                  </div>
+                  <input type="number" min="0" max="100" value={settings.medicalCategory.adversePoints}
+                    onChange={(e) => handleChange('medicalCategory', 'adversePoints', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" />
+                  <p className="text-xs text-gray-500 mt-1">Points awarded when PIVOT Medical Declarations Category = "Adverse" (default 15)</p>
+                </div>
+                <div className="bg-gray-50 border border-gray-200 rounded p-3">
+                  <p className="text-xs text-gray-500">Based on PIVOT's AI classification of overall medical declaration severity</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section 5: Non-Medical / Portability Flags */}
+          <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-gray-800"><i className="fas fa-flag mr-2 text-green-600"></i>Non-Medical / Portability Flags</h2>
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input type="checkbox" checked={settings.nonMedicalFlags.enabled} onChange={(e) => handleChange('nonMedicalFlags', 'enabled', e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded" />
+                <span className="text-sm text-gray-600">Enabled</span>
+              </label>
+            </div>
+            {settings.nonMedicalFlags.enabled && (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">Max Points</label>
+                    <span className="text-sm text-gray-500">{settings.nonMedicalFlags.maxPoints}</span>
+                  </div>
+                  <input type="number" min="0" max="100" value={settings.nonMedicalFlags.maxPoints}
+                    onChange={(e) => handleChange('nonMedicalFlags', 'maxPoints', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" />
+                  <p className="text-xs text-gray-500 mt-1">Maximum points for non-medical flags (default 10)</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Portability Case Points</label>
+                    <input type="number" min="0" max="20" value={settings.nonMedicalFlags.portabilityPoints}
+                      onChange={(e) => handleChange('nonMedicalFlags', 'portabilityPoints', e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded text-sm mt-1" />
+                    <p className="text-xs text-gray-500 mt-1">Points if porting from another insurer (default 6)</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Other Flag Points (each)</label>
+                    <input type="number" min="0" max="10" value={settings.nonMedicalFlags.otherFlagPoints}
+                      onChange={(e) => handleChange('nonMedicalFlags', 'otherFlagPoints', e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded text-sm mt-1" />
+                    <p className="text-xs text-gray-500 mt-1">Points per additional non-medical flag (default 2)</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <div className="flex justify-end space-x-4">
+              <button onClick={handleReset}
+                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm">
+                Reset to Default
+              </button>
+              <button onClick={handleSave}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+                Save Settings
+              </button>
+            </div>
+          </div>
+
+          {/* Settings Preview */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-6">
+            <h3 className="text-sm font-semibold text-blue-800 mb-2">Current Settings Preview</h3>
+            <pre className="text-xs text-blue-700 whitespace-pre-wrap">
+              {JSON.stringify(settings, null, 2)}
+            </pre>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+// ============================================================
+// TeleMER Risk Scoring Engine (uses configurable settings)
 // Computes a composite risk score (0-100) from TeleMER API data
 // ============================================================
 const computeTeleMERScore = (responseData) => {
   const data = responseData?.response?.data;
   if (!data) return { total: 0, breakdown: [], level: 'Unknown', color: '#9ca3af', bmi: 0, age: 0 };
 
+  const cfg = loadTeleMERSettings();
   const breakdown = [];
   let total = 0;
 
-  // --- 1. BMI Factor (0-25 points) ---
+  // --- 1. BMI Factor ---
   const bmi = parseFloat(data?.MetaData?.BMI || data?.MetaData?.bmi || 0);
   const bmiCategory = data?.Summary?.PIVOT_BMI_Category || '';
   let bmiPoints = 0;
   let bmiLabel = '';
-  if (bmi >= 40)       { bmiPoints = 25; bmiLabel = 'Morbidly Obese'; }
-  else if (bmi >= 35)  { bmiPoints = 22; bmiLabel = 'Severely Obese'; }
-  else if (bmi >= 30)  { bmiPoints = 18; bmiLabel = 'Obese'; }
-  else if (bmi >= 25)  { bmiPoints = 12; bmiLabel = 'Overweight'; }
-  else if (bmi > 0 && bmi < 18.5) { bmiPoints = 10; bmiLabel = 'Underweight'; }
-  else if (bmi >= 18.5) { bmiPoints = 0; bmiLabel = 'Normal'; }
-  else if (bmiCategory.toLowerCase() === 'adverse') { bmiPoints = 20; bmiLabel = 'Adverse'; }
-  breakdown.push({ factor: 'BMI', points: bmiPoints, max: 25, detail: bmi > 0 ? `${bmi} (${bmiLabel})` : (bmiCategory || 'N/A'), icon: 'fa-weight' });
-  total += bmiPoints;
+  if (cfg.bmi.enabled) {
+    const max = cfg.bmi.maxPoints;
+    if (bmi >= cfg.bmi.morbidThreshold)        { bmiPoints = max; bmiLabel = 'Morbidly Obese'; }
+    else if (bmi >= cfg.bmi.severeThreshold)    { bmiPoints = Math.round(max * 0.88); bmiLabel = 'Severely Obese'; }
+    else if (bmi >= cfg.bmi.obeseThreshold)     { bmiPoints = Math.round(max * 0.72); bmiLabel = 'Obese'; }
+    else if (bmi >= cfg.bmi.overweightThreshold){ bmiPoints = Math.round(max * 0.48); bmiLabel = 'Overweight'; }
+    else if (bmi > 0 && bmi < cfg.bmi.underweightThreshold) { bmiPoints = Math.round(max * 0.40); bmiLabel = 'Underweight'; }
+    else if (bmi >= cfg.bmi.underweightThreshold) { bmiPoints = 0; bmiLabel = 'Normal'; }
+    else if (bmiCategory.toLowerCase() === 'adverse') { bmiPoints = Math.round(max * 0.80); bmiLabel = 'Adverse'; }
+    breakdown.push({ factor: 'BMI', points: bmiPoints, max: cfg.bmi.maxPoints, detail: bmi > 0 ? `${bmi} (${bmiLabel})` : (bmiCategory || 'N/A'), icon: 'fa-weight' });
+    total += bmiPoints;
+  }
 
-  // --- 2. Medical Declarations (0-30 points) ---
+  // --- 2. Medical Declarations ---
   const medDecls = data?.YesMedicalDeclarationData || [];
-  const surgicalCount = medDecls.filter(d => (d.Details || '').toLowerCase().includes('surgical')).length;
-  const medPoints = Math.min(30, medDecls.length * 8 + surgicalCount * 4);
-  breakdown.push({ factor: 'Medical Declarations', points: medPoints, max: 30, detail: `${medDecls.length} condition${medDecls.length !== 1 ? 's' : ''} (${surgicalCount} surgical)`, icon: 'fa-notes-medical' });
-  total += medPoints;
+  if (cfg.medicalDeclarations.enabled) {
+    const surgicalCount = medDecls.filter(d => (d.Details || '').toLowerCase().includes('surgical')).length;
+    const medPoints = Math.min(cfg.medicalDeclarations.maxPoints, medDecls.length * cfg.medicalDeclarations.pointsPerCondition + surgicalCount * cfg.medicalDeclarations.surgicalBonus);
+    breakdown.push({ factor: 'Medical Declarations', points: medPoints, max: cfg.medicalDeclarations.maxPoints, detail: `${medDecls.length} condition${medDecls.length !== 1 ? 's' : ''} (${surgicalCount} surgical)`, icon: 'fa-notes-medical' });
+    total += medPoints;
+  }
 
-  // --- 3. Age Factor (0-20 points) ---
+  // --- 3. Age Factor ---
   const dobStr = data?.MetaData?.['Date of Birth of member'] || data?.MetaData?.['DOB of Proposer'] || '';
   let age = 0;
-  let agePoints = 0;
   if (dobStr) {
     const parts = dobStr.split(/[-\/]/);
     if (parts.length === 3) {
@@ -453,27 +907,35 @@ const computeTeleMERScore = (responseData) => {
       }
     }
   }
-  if (age > 60) agePoints = 20;
-  else if (age > 50) agePoints = 15;
-  else if (age > 40) agePoints = 10;
-  else if (age > 30) agePoints = 5;
-  breakdown.push({ factor: 'Age', points: agePoints, max: 20, detail: age > 0 ? `${age} years` : 'Unknown', icon: 'fa-user-clock' });
-  total += agePoints;
+  if (cfg.age.enabled) {
+    let agePoints = 0;
+    if (age > cfg.age.tier4Age) agePoints = cfg.age.tier4Points;
+    else if (age > cfg.age.tier3Age) agePoints = cfg.age.tier3Points;
+    else if (age > cfg.age.tier2Age) agePoints = cfg.age.tier2Points;
+    else if (age > cfg.age.tier1Age) agePoints = cfg.age.tier1Points;
+    agePoints = Math.min(agePoints, cfg.age.maxPoints);
+    breakdown.push({ factor: 'Age', points: agePoints, max: cfg.age.maxPoints, detail: age > 0 ? `${age} years` : 'Unknown', icon: 'fa-user-clock' });
+    total += agePoints;
+  }
 
-  // --- 4. Medical Category from PIVOT (0-15 points) ---
+  // --- 4. Medical Category from PIVOT ---
   const medCategory = data?.Summary?.PIVOT_Medical_Declarations_Category || '';
-  const catPoints = medCategory.toLowerCase() === 'adverse' ? 15 : 0;
-  breakdown.push({ factor: 'PIVOT Medical Category', points: catPoints, max: 15, detail: medCategory || 'N/A', icon: 'fa-file-medical' });
-  total += catPoints;
+  if (cfg.medicalCategory.enabled) {
+    const catPoints = medCategory.toLowerCase() === 'adverse' ? cfg.medicalCategory.adversePoints : 0;
+    breakdown.push({ factor: 'PIVOT Medical Category', points: catPoints, max: cfg.medicalCategory.maxPoints, detail: medCategory || 'N/A', icon: 'fa-file-medical' });
+    total += catPoints;
+  }
 
-  // --- 5. Non-Medical / Portability Flags (0-10 points) ---
+  // --- 5. Non-Medical / Portability Flags ---
   const nonMedDecls = data?.YesNonMedicalDeclarationData || [];
-  const isPortability = nonMedDecls.some(d => (d.Questions || '').toLowerCase().includes('portability'));
-  let nonMedPoints = isPortability ? 6 : 0;
-  nonMedPoints += Math.min(4, (nonMedDecls.length - (isPortability ? 1 : 0)) * 2);
-  nonMedPoints = Math.max(0, nonMedPoints);
-  breakdown.push({ factor: 'Non-Medical Flags', points: nonMedPoints, max: 10, detail: isPortability ? `Portability case + ${nonMedDecls.length - 1} other` : `${nonMedDecls.length} flag${nonMedDecls.length !== 1 ? 's' : ''}`, icon: 'fa-flag' });
-  total += nonMedPoints;
+  if (cfg.nonMedicalFlags.enabled) {
+    const isPortability = nonMedDecls.some(d => (d.Questions || '').toLowerCase().includes('portability'));
+    let nonMedPoints = isPortability ? cfg.nonMedicalFlags.portabilityPoints : 0;
+    nonMedPoints += Math.min(cfg.nonMedicalFlags.maxPoints - (isPortability ? cfg.nonMedicalFlags.portabilityPoints : 0), (nonMedDecls.length - (isPortability ? 1 : 0)) * cfg.nonMedicalFlags.otherFlagPoints);
+    nonMedPoints = Math.max(0, Math.min(cfg.nonMedicalFlags.maxPoints, nonMedPoints));
+    breakdown.push({ factor: 'Non-Medical Flags', points: nonMedPoints, max: cfg.nonMedicalFlags.maxPoints, detail: isPortability ? `Portability case + ${nonMedDecls.length - 1} other` : `${nonMedDecls.length} flag${nonMedDecls.length !== 1 ? 's' : ''}`, icon: 'fa-flag' });
+    total += nonMedPoints;
+  }
 
   total = Math.min(100, total);
 
@@ -2428,6 +2890,10 @@ const getSumInsuredFromData = (responseData) => {
                     </button>
                   </>
                 )}
+                <button onClick={() => setPage('telemer-config')}
+                  className="px-3 py-2 bg-purple-600 text-white rounded text-sm hover:bg-purple-700">
+                  <i className="fas fa-sliders-h mr-1"></i> Score Settings
+                </button>
                 <button onClick={() => { setPage('home'); setUwResponseData(null); setUwFile(null); }}
                   className="px-3 py-2 border border-gray-300 text-gray-600 rounded text-sm hover:bg-gray-50">
                   <i className="fas fa-arrow-left mr-1"></i> Back to Home
@@ -2708,6 +3174,10 @@ const getSumInsuredFromData = (responseData) => {
 
   if (page === 'config') {
     return <ScoreConfigPage setPage={setPage} />;
+  }
+
+  if (page === 'telemer-config') {
+    return <TeleMERConfigPage setPage={setPage} />;
   }
 
   if (page === 'demo') {

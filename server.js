@@ -648,7 +648,11 @@ app.post("/api/underwriting/analyze", upload.single("input_file"), async (req, r
     console.log(`[API] underwriting/analyze response: ${response.status}`);
 
     if (!response.ok) {
-      return res.status(response.status).json({ error: `API processing error (${response.status})` });
+      const errDetail = response.status === 401 ? 'TeleMER API authentication failed. The API key may be expired or invalid. Please check TELEMER_API_KEY in .env.' :
+                         response.status === 403 ? 'TeleMER API access forbidden. Check API permissions.' :
+                         `TeleMER API error (HTTP ${response.status})`;
+      console.error(`[API] underwriting/analyze upstream error: ${response.status} - ${errDetail}`);
+      return res.status(502).json({ error: errDetail });
     }
 
     const result = await response.json();

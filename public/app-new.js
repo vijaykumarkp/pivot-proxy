@@ -1292,13 +1292,14 @@ const App = () => {
         body: formData
       });
       if (!response.ok) {
-        throw new Error('HTTP error! status: ' + response.status);
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Upload failed (HTTP ' + response.status + ')');
       }
       const data = await response.json();
       setUwResponseData(data);
     } catch (err) {
       console.error('TeleMER Error:', err);
-      alert('Upload failed: ' + err.message);
+      setUwFileError(err.message);
     } finally {
       setUwLoading(false);
     }
@@ -2884,10 +2885,6 @@ const getSumInsuredFromData = (responseData) => {
                       className="px-3 py-2 border border-gray-300 text-gray-600 rounded text-sm hover:bg-gray-50">
                       <i className="fas fa-code mr-1"></i> {uwShowRaw ? 'Hide' : 'Show'} Raw JSON
                     </button>
-                    <button onClick={() => { setUwResponseData(null); setUwFile(null); setUwFileError(null); setUwShowRaw(false); setUwExpandedDecl(null); }}
-                      className="px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700">
-                      <i className="fas fa-plus mr-1"></i> New Analysis
-                    </button>
                   </>
                 )}
                 <button onClick={() => setPage('telemer-config')}
@@ -2901,55 +2898,62 @@ const getSumInsuredFromData = (responseData) => {
               </div>
             </div>
 
-            {/* Upload Form - always visible when no results */}
-            {!uwResponseData && (
-              <div className="max-w-2xl mx-auto">
-                <div className="bg-white rounded-xl shadow-lg p-8">
-                  <div className="text-center mb-6">
-                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <i className="fas fa-stethoscope text-green-600 text-2xl"></i>
-                    </div>
-                    <h2 className="text-2xl font-bold text-gray-800">Upload TeleMER Document</h2>
-                    <p className="text-sm text-gray-500 mt-2">Upload a medical examination report for AI-powered underwriting analysis</p>
+            {/* Upload Form - always visible as compact bar */}
+            <div className="bg-white rounded-xl shadow-lg p-4 mb-6">
+              <form onSubmit={(e) => { e.preventDefault(); handleUwUpload(e); }} className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center space-x-2">
+                  <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                    <i className="fas fa-stethoscope text-green-600"></i>
                   </div>
-                  <form onSubmit={handleUwUpload}>
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Insurance Company</label>
-                      <select value={uwCompany} onChange={(e) => setUwCompany(e.target.value)}
-                        className="w-full p-3 border border-gray-300 rounded-lg text-sm">
-                        <option value="telemer_hdfcergo">HDFC Ergo</option>
-                        <option value="telemer_starhealth">Star Health</option>
-                        <option value="telemer_icicilombard">ICICI Lombard</option>
-                        <option value="telemer_bajajallianz">Bajaj Allianz</option>
-                        <option value="telemer_maxbupa">Max Bupa / Niva</option>
-                        <option value="telemer_carehealth">Care Health</option>
-                      </select>
-                    </div>
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Medical Document</label>
-                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors"
-                        style={{cursor: 'pointer'}} onClick={() => document.getElementById('uw-file-input')?.click()}>
-                        <i className="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
-                        <p className="text-sm text-gray-600">{uwFile ? uwFile.name : 'Click to upload or drag and drop'}</p>
-                        <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG up to 10MB</p>
-                      </div>
-                      <input id="uw-file-input" type="file" onChange={handleUwFileChange} className="hidden" accept=".pdf,.jpg,.jpeg,.png" />
-                    </div>
-                    {uwFileError && (
-                      <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                        <p className="text-sm text-red-600"><i className="fas fa-exclamation-circle mr-1"></i> {uwFileError}</p>
-                      </div>
-                    )}
-                    <button type="submit" disabled={!uwFile || uwLoading}
-                      className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
-                      {uwLoading ? (
-                        <span><i className="fas fa-spinner fa-spin mr-2"></i>Analysing Document...</span>
-                      ) : (
-                        <span><i className="fas fa-search mr-2"></i>Analyse Document</span>
-                      )}
-                    </button>
-                  </form>
+                  <span className="text-sm font-semibold text-gray-700 hidden md:inline">Analyse TeleMER</span>
                 </div>
+                <select value={uwCompany} onChange={(e) => setUwCompany(e.target.value)}
+                  className="p-2 border border-gray-300 rounded-lg text-sm" style={{minWidth: 150}}>
+                  <option value="telemer_hdfcergo">HDFC Ergo</option>
+                  <option value="telemer_starhealth">Star Health</option>
+                  <option value="telemer_icicilombard">ICICI Lombard</option>
+                  <option value="telemer_bajajallianz">Bajaj Allianz</option>
+                  <option value="telemer_maxbupa">Max Bupa / Niva</option>
+                  <option value="telemer_carehealth">Care Health</option>
+                </select>
+                <div className="flex-1" style={{minWidth: 200}}>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 text-center hover:border-blue-400 transition-colors cursor-pointer"
+                    onClick={() => document.getElementById('uw-file-input')?.click()}>
+                    <p className="text-sm text-gray-600">
+                      {uwFile ? (<span><i className="fas fa-file-pdf mr-1 text-red-500"></i>{uwFile.name}</span>) :
+                        (<span><i className="fas fa-cloud-upload-alt mr-1 text-gray-400"></i>Click to select file (PDF, JPG, PNG)</span>)}
+                    </p>
+                  </div>
+                  <input id="uw-file-input" type="file" onChange={(e) => { handleUwFileChange(e); setUwFileError(null); }} className="hidden" accept=".pdf,.jpg,.jpeg,.png" />
+                </div>
+                <button type="submit" disabled={!uwFile || uwLoading}
+                  className="bg-green-600 text-white px-5 py-2 rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm">
+                  {uwLoading ? (<span><i className="fas fa-spinner fa-spin mr-1"></i>Analysing...</span>) :
+                    (<span><i className="fas fa-search mr-1"></i>Analyse</span>)}
+                </button>
+              </form>
+              {uwFileError && (
+                <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-600"><i className="fas fa-exclamation-circle mr-1"></i> {uwFileError}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Placeholder when no results yet */}
+            {!uwResponseData && !uwLoading && (
+              <div className="text-center py-16">
+                <i className="fas fa-clipboard-check text-6xl text-gray-200 mb-4"></i>
+                <p className="text-gray-400 text-lg">Upload a TeleMER document above to see the analysis</p>
+                <p className="text-gray-300 text-sm mt-2">Select insurance company, choose file, and click Analyse</p>
+              </div>
+            )}
+
+            {/* Loading state */}
+            {uwLoading && (
+              <div className="text-center py-16">
+                <i className="fas fa-spinner fa-spin text-5xl text-green-500 mb-4"></i>
+                <p className="text-gray-600 text-lg">Analysing document...</p>
+                <p className="text-gray-400 text-sm mt-2">This may take a few moments depending on document size</p>
               </div>
             )}
 

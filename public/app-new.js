@@ -1230,6 +1230,7 @@ const App = () => {
   const [uwFileError, setUwFileError] = useState(null);
   const [uwShowRaw, setUwShowRaw] = useState(false);
   const [uwExpandedDecl, setUwExpandedDecl] = useState(null);
+  const [uwShowBreakdown, setUwShowBreakdown] = useState(false);
 
   // Session & permissions state (Phase 2)
   const [sessionInfo, setSessionInfo] = useState(null);
@@ -3019,6 +3020,36 @@ const getSumInsuredFromData = (responseData) => {
                   </div>
                 </div>
 
+                {/* Detailed Score Breakdown — collapsible, right below banner */}
+                <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+                  <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+                    onClick={() => setUwShowBreakdown(!uwShowBreakdown)}>
+                    <span className="text-base font-semibold text-gray-800">
+                      <i className="fas fa-chart-bar mr-2 text-purple-600"></i>Detailed Score Breakdown
+                    </span>
+                    <div className="flex items-center space-x-3">
+                      <span className="text-sm text-gray-500">Final Score = {uwScore.breakdown.map(b => b.points).join(' + ')} = {uwScore.total}</span>
+                      <i className={`fas fa-chevron-${uwShowBreakdown ? 'up' : 'down'} text-gray-400`}></i>
+                    </div>
+                  </button>
+                  {uwShowBreakdown && (
+                    <div className="px-6 pb-5 border-t border-gray-100 space-y-3 pt-4">
+                      {uwScore.breakdown.map((b, i) => (
+                        <div key={i}>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="text-gray-600"><i className={`fas ${b.icon} mr-2`}></i>{b.factor}</span>
+                            <span className="font-semibold text-gray-800">{b.points} / {b.max}</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full" style={{height: 6}}>
+                            <div className="rounded-full" style={{width: `${b.max > 0 ? (b.points / b.max) * 100 : 0}%`, height: 6, background: uwScore.color, transition: 'width 0.8s ease'}}></div>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-1">{b.detail}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* Member Profile Card */}
                 <div className="bg-white rounded-xl shadow-lg p-6">
                   <h3 className="text-lg font-semibold text-gray-800 mb-4"><i className="fas fa-user-circle mr-2 text-blue-600"></i>Member Profile</h3>
@@ -3137,24 +3168,6 @@ const getSumInsuredFromData = (responseData) => {
                       )}
                     </div>
 
-                    {/* Score Breakdown Detail */}
-                    <div className="bg-white rounded-xl shadow-lg p-6">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4"><i className="fas fa-chart-bar mr-2 text-purple-600"></i>Score Breakdown</h3>
-                      <div className="space-y-3">
-                        {uwScore.breakdown.map((b, i) => (
-                          <div key={i}>
-                            <div className="flex justify-between text-sm mb-1">
-                              <span className="text-gray-600"><i className={`fas ${b.icon} mr-2`}></i>{b.factor}</span>
-                              <span className="font-semibold text-gray-800">{b.points} / {b.max}</span>
-                            </div>
-                            <div className="w-full bg-gray-200 rounded-full" style={{height: 6}}>
-                              <div className="rounded-full" style={{width: `${b.max > 0 ? (b.points / b.max) * 100 : 0}%`, height: 6, background: uwScore.color, transition: 'width 0.8s ease'}}></div>
-                            </div>
-                            <p className="text-xs text-gray-400 mt-1">{b.detail}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
                   </div>
                 </div>
 

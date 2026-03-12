@@ -3448,152 +3448,122 @@ const getSumInsuredFromData = (responseData) => {
               </div>
               
               <div className="space-y-4">
-                {responseData && (
-                  <div className="bg-white rounded-lg shadow-lg p-6">
-                    <h3 className="text-xl font-semibold mb-4">Portability Score</h3>
-                    <div className="mb-4">
-                      <div className={`text-5xl font-bold ${
-                        (scoreData?.score || 0) < 60 ? 'text-red-600' :
-                        (scoreData?.score || 0) < 80 ? 'text-amber-600' :
-                        'text-green-600'
-                      }`}>
-                        {scoreData?.score || 0}/100
-                      </div>
-                      <div className={`text-sm font-medium mt-2 ${
-                        (scoreData?.score || 0) < 60 ? 'text-red-500' :
-                        (scoreData?.score || 0) < 80 ? 'text-amber-500' :
-                        'text-green-500'
-                      }`}>
-                        {(scoreData?.score || 0) < 60 ? 'Needs Review' :
-                         (scoreData?.score || 0) < 80 ? 'Review Recommended' :
-                         'Good to Port'}
-                      </div>
-                    </div>
-                    
-                    <div className="mb-4">
-                      <h4 className="font-medium text-gray-800 mb-2">Why this score?</h4>
-                      <div className="text-sm text-gray-600">
-                        {(() => {
-                          if (!scoreData?.breakdown) return 'Score calculation in progress...';
-                          
-                          const totalPoints = Object.entries(scoreData.breakdown).reduce((sum, [key, value]) => {
-                            if (key === 'finalScore' || key === 'eligibilityGate' || key === 'activeSettings' || key === 'layer2Summary' || key === 'layer3Summary') return sum;
-                            return sum + (value.points || 0);
-                          }, 0);
-                          
-                          const maxPoints = 60; // Maximum possible points from all criteria
-                          const scorePercentage = (totalPoints / maxPoints) * 100;
-                          
-                          if (scoreData.breakdown.eligibilityGate?.cap) {
-                            return `Score capped at ${scoreData.breakdown.eligibilityGate.cap} due to incomplete eligibility data.`;
-                          } else if (scorePercentage >= 80) {
-                            return 'Excellent policy data completeness with strong continuity indicators.';
-                          } else if (scorePercentage >= 60) {
-                            return 'Good policy data with some continuity signals available.';
-                          } else {
-                            return 'Limited policy data affecting portability assessment.';
-                          }
-                        })()}
-                      </div>
-                    </div>
-                    
-                    <div className="mb-4">
-                      <details className="border border-gray-200 rounded-lg">
-                        <summary className="cursor-pointer px-3 py-2 font-medium text-gray-800 hover:bg-gray-50 flex justify-between items-center">
-                          <span>Scoring breakdown</span>
-                          <span className="text-gray-400 text-xs">▼</span>
-                        </summary>
-                        <div className="px-3 py-2 border-t border-gray-200">
-                          {/* Visible Formula */}
-                          <div className="bg-blue-50 border border-blue-200 rounded p-2 mb-3 text-xs text-blue-800">
-                            <strong>Final Score = Data Availability + PED Declaration + Policy Currency + Policy Continuity + High Sum Insured Risk</strong>
+                {responseData && (() => {
+                  const pScore = scoreData?.score || 0;
+                  const pColor = pScore < 60 ? '#dc2626' : pScore < 80 ? '#ca8a04' : '#16a34a';
+                  const pLevel = pScore < 60 ? 'Needs Review' : pScore < 80 ? 'Review Recommended' : 'Good to Port';
+                  const pSettings = scoreData?.breakdown?.activeSettings;
+                  const pComponents = [
+                    { factor: 'Data Availability', points: scoreData?.breakdown?.dataAvailability?.points || 0, max: pSettings?.dataAvailability?.maxPoints || 30,
+                      detail: `${scoreData?.breakdown?.dataAvailability?.availableFields?.length || 0} fields available`, icon: 'fa-database' },
+                    { factor: 'PED Declaration', points: scoreData?.breakdown?.pedDeclaration?.points || 0, max: pSettings?.pedDeclaration?.points || 15,
+                      detail: scoreData?.breakdown?.pedDeclaration?.hasPED ? 'PED declared' : 'No PED', icon: 'fa-notes-medical' },
+                    { factor: 'Policy Currency', points: scoreData?.breakdown?.policyCurrency?.points || 0, max: pSettings?.policyCurrency?.points || 15,
+                      detail: scoreData?.breakdown?.policyCurrency?.daysUntilExpiry !== null ? `${scoreData?.breakdown?.policyCurrency?.daysUntilExpiry} days to expiry` : 'No expiry date', icon: 'fa-calendar-check' },
+                    { factor: 'Continuity', points: scoreData?.breakdown?.continuityBonus?.points || 0, max: pSettings?.continuityBonus?.points || 20,
+                      detail: scoreData?.breakdown?.continuityBonus?.hasContinuity ? 'Continuity data available' : 'No continuity data', icon: 'fa-link' },
+                    { factor: 'Sum Insured Risk', points: scoreData?.breakdown?.highSumInsuredRisk?.points || 0, max: pSettings?.highSumInsuredRisk?.points || 20,
+                      detail: scoreData?.breakdown?.highSumInsuredRisk?.points > 0 ? 'Within limits' : 'Exceeds limits', icon: 'fa-shield-alt' }
+                  ];
+                  const pRingRadius = 37;
+                  const pCircumference = 2 * Math.PI * pRingRadius;
+                  const pOffset = pCircumference - (pScore / 100) * pCircumference;
+
+                  // Key metrics from response data
+                  const policyNumber = responseData?.response?.data?.policy_and_coverage_details?.policy_number || 'N/A';
+                  const policyType = responseData?.response?.data?.policy_and_coverage_details?.policy_type || 'N/A';
+                  const sumInsured = responseData?.response?.data?.policy_and_coverage_details?.floater_basic_sum_insured || 'N/A';
+                  const insuredCount = responseData?.response?.data?.insured_details?.length || 0;
+                  const hasPED = scoreData?.breakdown?.pedDeclaration?.hasPED;
+
+                  return (
+                  <div className="bg-white rounded-xl shadow-lg p-6 space-y-4">
+                    {/* Score Banner - matching TeleMER style */}
+                    <div style={{borderLeft: `6px solid ${pColor}`, borderRadius: 12, padding: 20, background: '#fff'}}>
+                      <div className="flex items-center justify-between flex-wrap gap-4">
+                        <div className="flex items-center space-x-4">
+                          <div style={{position: 'relative', width: 90, height: 90}}>
+                            <svg width="90" height="90" style={{transform: 'rotate(-90deg)'}}>
+                              <circle cx="45" cy="45" r={pRingRadius} fill="none" stroke="#e5e7eb" strokeWidth="6" />
+                              <circle cx="45" cy="45" r={pRingRadius} fill="none" stroke={pColor} strokeWidth="6"
+                                strokeDasharray={pCircumference} strokeDashoffset={pOffset} strokeLinecap="round"
+                                style={{transition: 'stroke-dashoffset 1s ease'}} />
+                            </svg>
+                            <div style={{position: 'absolute', top: 0, left: 0, width: 90, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                              <span style={{fontSize: '22px', fontWeight: 700, color: pColor}}>{pScore}</span>
+                            </div>
                           </div>
-                          
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="border-b">
-                                <th className="text-left py-1 font-medium text-gray-600">Component</th>
-                                <th className="text-left py-1 font-medium text-gray-600">Condition</th>
-                                <th className="text-left py-1 font-medium text-gray-600">Actual</th>
-                                <th className="text-right py-1 font-medium text-gray-600">Points</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(() => {
-                                const settings = scoreData?.breakdown?.activeSettings;
-                                
-                                const components = [
-                                  {
-                                    name: 'Data Availability',
-                                    condition: `${scoreData?.breakdown?.dataAvailability?.availableFields?.length || 0}/${scoreData?.breakdown?.dataAvailability?.availableFields?.length + (scoreData?.breakdown?.dataAvailability?.missingFields?.length || 0)} fields`,
-                                    actual: scoreData?.breakdown?.dataAvailability?.availableFields?.join(', ') || 'None',
-                                    points: scoreData?.breakdown?.dataAvailability?.points || 0,
-                                    maxPoints: settings?.dataAvailability?.maxPoints || 30
-                                  },
-                                  {
-                                    name: 'PED Declaration',
-                                    condition: 'No PED declarations required',
-                                    actual: scoreData?.breakdown?.pedDeclaration?.hasPED ? 'PED declared (risk factor)' : 'No PED (no risk)',
-                                    points: scoreData?.breakdown?.pedDeclaration?.points || 0,
-                                    maxPoints: settings?.pedDeclaration?.points || 15
-                                  },
-                                  {
-                                    name: 'Policy Currency',
-                                    condition: `Expires within ${settings?.policyCurrency?.defaultDays || 30} days`,
-                                    actual: scoreData?.breakdown?.policyCurrency?.daysUntilExpiry !== null 
-                                      ? `${scoreData?.breakdown?.policyCurrency?.daysUntilExpiry} days` 
-                                      : 'No expiry date',
-                                    points: scoreData?.breakdown?.policyCurrency?.points || 0,
-                                    maxPoints: settings?.policyCurrency?.points || 15
-                                  },
-                                  {
-                                    name: 'Policy Continuity',
-                                    condition: 'Any insured has first_policy_started',
-                                    actual: scoreData?.breakdown?.continuityBonus?.hasContinuity ? 'Continuity data available' : 'No continuity data',
-                                    points: scoreData?.breakdown?.continuityBonus?.points || 0,
-                                    maxPoints: settings?.continuityBonus?.points || 20
-                                  },
-                                  {
-                                    name: 'High Sum Insured Risk',
-                                    condition: `Individual ≤ ₹${(settings?.highSumInsuredRisk?.individualLimit || 500000).toLocaleString()} AND Floater ≤ ₹${(settings?.highSumInsuredRisk?.floaterLimit || 1000000).toLocaleString()}`,
-                                    actual: scoreData?.breakdown?.highSumInsuredRisk?.points > 0 
-                                      ? 'Within limits' 
-                                      : `Exceeds limits (Individual: ₹${scoreData?.breakdown?.highSumInsuredRisk?.maxIndividualSumInsured?.toLocaleString()}, Floater: ₹${scoreData?.breakdown?.highSumInsuredRisk?.floaterSumInsured?.toLocaleString()})`,
-                                    points: scoreData?.breakdown?.highSumInsuredRisk?.points || 0,
-                                    maxPoints: settings?.highSumInsuredRisk?.points || 20
-                                  }
-                                ];
-                                
-                                return components.map((component, index) => (
-                                  <tr key={index} className="border-b">
-                                    <td className="py-1">{component.name}</td>
-                                    <td className="py-1 text-xs text-gray-600">{component.condition}</td>
-                                    <td className="py-1 text-xs">{component.actual}</td>
-                                    <td className="py-1 text-right">
-                                      <span className={`font-medium ${
-                                        component.points === component.maxPoints ? 'text-green-600' : 'text-red-600'
-                                      }`}>
-                                        {component.points > 0 ? `+${component.points}` : '0'}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                ));
-                              })()}
-                            </tbody>
-                          </table>
-                          
-                          {/* Reconciliation Line */}
+                          <div>
+                            <p className="text-xs text-gray-500 uppercase font-semibold">PIVOT Portability Score</p>
+                            <p className="text-xl font-bold" style={{color: pColor}}>{pLevel}</p>
+                            <p className="text-xs text-gray-400">Policy: {policyNumber}</p>
+                          </div>
+                        </div>
+                        <div className="flex space-x-6">
+                          <div className="text-center px-4 py-2 bg-gray-50 rounded-lg">
+                            <p className="text-xs text-gray-500">Type</p>
+                            <p className="text-sm font-bold text-gray-800">{policyType}</p>
+                          </div>
+                          <div className="text-center px-4 py-2 bg-gray-50 rounded-lg">
+                            <p className="text-xs text-gray-500">Sum Insured</p>
+                            <p className="text-sm font-bold text-gray-800">{sumInsured}</p>
+                          </div>
+                          <div className="text-center px-4 py-2 bg-gray-50 rounded-lg">
+                            <p className="text-xs text-gray-500">Members</p>
+                            <p className="text-lg font-bold text-gray-800">{insuredCount}</p>
+                          </div>
+                          <div className="text-center px-4 py-2 rounded-lg" style={{background: hasPED ? '#fef2f2' : '#f0fdf4'}}>
+                            <p className="text-xs text-gray-500">PED</p>
+                            <p className="text-sm font-bold" style={{color: hasPED ? '#dc2626' : '#16a34a'}}>{hasPED ? 'Declared' : 'None'}</p>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Score Breakdown Bar */}
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        <div className="flex items-center space-x-1" style={{height: 8, borderRadius: 4, overflow: 'hidden', background: '#e5e7eb'}}>
+                          {pComponents.map((b, i) => (
+                            <div key={i} style={{width: `${b.max}%`, height: '100%', background: b.points > 0 ? pColor : 'transparent', opacity: b.max > 0 ? 0.3 + (b.points / b.max) * 0.7 : 0.3, borderRadius: 2}} title={`${b.factor}: ${b.points}/${b.max}`}></div>
+                          ))}
+                        </div>
+                        <div className="flex justify-between mt-2 text-xs text-gray-500">
+                          {pComponents.map((b, i) => (
+                            <span key={i} title={b.detail}><i className={`fas ${b.icon} mr-1`}></i>{b.factor}: {b.points}/{b.max}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Score Breakdown Detail with progress bars */}
+                    <div>
+                      <details className="border border-gray-200 rounded-lg">
+                        <summary className="cursor-pointer px-4 py-3 font-medium text-gray-800 hover:bg-gray-50 flex justify-between items-center">
+                          <span><i className="fas fa-chart-bar mr-2 text-purple-600"></i>Detailed Score Breakdown</span>
+                          <i className="fas fa-chevron-down text-gray-400 text-xs"></i>
+                        </summary>
+                        <div className="px-4 py-3 border-t border-gray-200 space-y-3">
+                          {pComponents.map((b, i) => (
+                            <div key={i}>
+                              <div className="flex justify-between text-sm mb-1">
+                                <span className="text-gray-600"><i className={`fas ${b.icon} mr-2`}></i>{b.factor}</span>
+                                <span className="font-semibold text-gray-800">{b.points} / {b.max}</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full" style={{height: 6}}>
+                                <div className="rounded-full" style={{width: `${b.max > 0 ? (b.points / b.max) * 100 : 0}%`, height: 6, background: pColor, transition: 'width 0.8s ease'}}></div>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-1">{b.detail}</p>
+                            </div>
+                          ))}
                           <div className="border-t pt-2 mt-2">
                             <div className="text-sm font-medium text-gray-700 text-center">
-                              Final Score = {scoreData?.breakdown?.scoreBreakdown?.dataAvailability || 0} + {scoreData?.breakdown?.scoreBreakdown?.pedDeclaration || 0} + {scoreData?.breakdown?.scoreBreakdown?.policyCurrency || 0} + {scoreData?.breakdown?.scoreBreakdown?.continuityBonus || 0} + {scoreData?.breakdown?.scoreBreakdown?.highSumInsuredRisk || 0} = {scoreData?.score || 0}
+                              Final Score = {pComponents.map(c => c.points).join(' + ')} = {pScore}
                             </div>
                           </div>
                         </div>
                       </details>
                     </div>
-                    
-                    </div>
-                )}
+                  </div>
+                  );
+                })()}
                 
                 {responseData && (
                   <div className="bg-white rounded-lg shadow-lg p-6">

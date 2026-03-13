@@ -3622,102 +3622,86 @@ const getSumInsuredFromData = (responseData) => {
           </div>
         </div>
 
-        {/* Multi-Year Policy Analysis Placeholder */}
+        {/* Multi-Year Policy Analysis */}
         <div className="container mx-auto px-4 py-6">
-          <div className="max-w-4xl mx-auto">
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <h3 className="text-xl font-semibold mb-3">Multi-Year Policy Analysis</h3>
-              <p className="text-sm text-gray-600 mb-6">
-                Compare this policy against prior years to detect coverage changes, sum insured movement, cumulative bonus shifts, and continuity gaps.
-              </p>
-              
-              <button
-                disabled={!responseData}
-                className={`px-4 py-2 rounded mb-3 ${
-                  responseData 
-                    ? 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer' 
-                    : 'bg-gray-400 text-white cursor-not-allowed'
-                }`}
-                onClick={() => {
-                  if (responseData) {
-                    // Show inline info banner
-                    const banner = document.getElementById('multiyear-info-banner');
-                    if (banner) {
-                      banner.style.display = 'block';
-                      setTimeout(() => {
-                        banner.style.display = 'none';
-                      }, 5000);
-                    }
-                    // Show multi-year upload section
-                    setMultiYearUploadVisible(true);
-                  }
-                }}
-              >
-                Start Multi-Year Policy Analysis
-              </button>
-              
-              {/* Inline Info Banner */}
-              <div 
-                id="multiyear-info-banner" 
-                className="hidden bg-blue-50 border border-blue-200 rounded p-3 mb-3"
-              >
-                <p className="text-sm text-blue-800">
-                  Multi-year policy upload will be enabled next. Current policy is saved as the reference year.
-                </p>
+          <div className="max-w-7xl mx-auto">
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
+                    <i className="fas fa-layer-group text-indigo-600"></i>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800">Multi-Year Policy Analysis</h3>
+                    <p className="text-xs text-gray-500">Compare policies across years to detect coverage changes, bonus shifts, and continuity gaps</p>
+                  </div>
+                </div>
+                {!multiYearUploadVisible && (
+                  <button
+                    disabled={!responseData}
+                    className="bg-indigo-600 text-white px-5 py-2 rounded-lg font-semibold hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm"
+                    onClick={() => { if (responseData) setMultiYearUploadVisible(true); }}
+                  >
+                    <i className="fas fa-play mr-1"></i> Start Analysis
+                  </button>
+                )}
               </div>
               
               {/* Multi-Year Policy Upload Section */}
               {multiYearUploadVisible && (
-                <div className="mt-6 pt-6 border-t border-gray-200">
-                  <h4 className="text-lg font-medium text-gray-800 mb-2">Multi-Year Policy Upload</h4>
-                  <p className="text-sm text-gray-600 mb-4">Upload prior-year policy documents for comparison</p>
-                  
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50">
-                    <div className="mb-3">
-                      <label className="block text-gray-700 mb-2">Upload Previous Policy (Older Year)</label>
-                      <input
-                        type="file"
-                        onChange={handlePreviousPolicyUpload}
-                        className="w-full p-2 border border-gray-300 rounded bg-white"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Supported formats: PDF, JPG, JPEG, PNG</p>
-                    </div>
-                    
-                    <p className="text-xs text-gray-500 mb-3">You may upload policies from earlier years one by one.</p>
-                    
-                    {/* Uploaded Files List */}
-                    {previousPolicies.length > 0 && (
-                      <div className="mt-4">
-                        <h5 className="text-sm font-medium text-gray-700 mb-2">Uploaded Previous Policies:</h5>
-                        <ul className="text-xs text-gray-600 space-y-1">
-                          {previousPolicies.map((policy, index) => (
-                            <li key={index} className="flex items-center justify-between">
-                              <div className="flex items-center">
-                                <span className={`w-2 h-2 rounded-full mr-2 ${
-                                  policy.processed ? 'bg-green-500' : 
-                                  policy.error ? 'bg-red-500' : 'bg-yellow-500'
-                                }`}></span>
-                                {policy.name} ({policy.size ? (policy.size / 1024 / 1024).toFixed(2) : '0.00'} MB)
-                              </div>
-                              <span className={`text-xs ${
-                                policy.processed ? 'text-green-600' : 
-                                policy.error ? 'text-red-600' : 'text-yellow-600'
-                              }`}>
-                                {policy.processed ? 'Processed' : 
-                                 policy.error ? 'Failed' : 'Processing...'}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  {/* Compact upload bar matching main upload style */}
+                  <div className="flex items-center gap-4 flex-wrap mb-4">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                        <i className="fas fa-history text-indigo-600 text-sm"></i>
                       </div>
-                    )}
+                      <span className="text-sm font-semibold text-gray-700">Add Prior Year</span>
+                    </div>
+                    <div className="flex-1" style={{minWidth: 200}}>
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 text-center hover:border-indigo-400 transition-colors cursor-pointer"
+                        onClick={() => document.getElementById('multiyear-file-input')?.click()}>
+                        <p className="text-sm text-gray-600">
+                          <i className="fas fa-cloud-upload-alt mr-1 text-gray-400"></i>Click to select previous year policy (PDF, JPG, PNG)
+                        </p>
+                      </div>
+                      <input id="multiyear-file-input" type="file" onChange={handlePreviousPolicyUpload} className="hidden" accept=".pdf,.jpg,.jpeg,.png" />
+                    </div>
                   </div>
+                  <p className="text-xs text-gray-400 mb-4">Upload policies from earlier years one by one for comparison.</p>
+
+                  {/* Uploaded Files List */}
+                  {previousPolicies.length > 0 && (
+                    <div className="mb-4">
+                      <h5 className="text-xs font-semibold text-gray-600 uppercase mb-2">Uploaded Policies</h5>
+                      <div className="space-y-2">
+                        {previousPolicies.map((policy, index) => (
+                          <div key={index} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                            <div className="flex items-center">
+                              <span className={`w-2 h-2 rounded-full mr-2 ${
+                                policy.processed ? 'bg-green-500' :
+                                policy.error ? 'bg-red-500' : 'bg-yellow-500'
+                              }`}></span>
+                              <span className="text-sm text-gray-700">{policy.name}</span>
+                              <span className="text-xs text-gray-400 ml-2">({policy.size ? (policy.size / 1024 / 1024).toFixed(2) : '0.00'} MB)</span>
+                            </div>
+                            <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                              policy.processed ? 'bg-green-100 text-green-700' :
+                              policy.error ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+                            }`}>
+                              {policy.processed ? 'Processed' :
+                               policy.error ? 'Failed' : 'Processing...'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   
                   {/* Policy Timeline Display */}
                   {(responseData || previousPolicies.length > 0) && (
-                    <div className="mt-6">
-                      <h5 className="text-sm font-medium text-gray-700 mb-3">Policy Timeline</h5>
+                    <div className="mt-4 pt-4 border-t border-gray-100">
+                      <h5 className="text-sm font-semibold text-gray-800 mb-3"><i className="fas fa-clock mr-2 text-indigo-500"></i>Policy Timeline</h5>
                       
                       {/* Processed Policies Display */}
                       {(() => {
@@ -3798,7 +3782,7 @@ const getSumInsuredFromData = (responseData) => {
                         
                         return (
                           <div className="mt-6 p-4 bg-gray-100 rounded-lg">
-                            <h6 className="text-xs font-medium text-gray-600 mb-3">Coverage Timeline</h6>
+                            <h6 className="text-xs font-semibold text-gray-600 mb-3"><i className="fas fa-project-diagram mr-1 text-indigo-400"></i>Coverage Timeline</h6>
                             <div className="relative">
                               {/* Timeline Base */}
                               <div className="h-2 bg-gray-300 rounded-full"></div>
@@ -3912,10 +3896,10 @@ const getSumInsuredFromData = (responseData) => {
                         
                         return (
                           <div className="mt-8">
-                            <h5 className="text-sm font-medium text-gray-700 mb-4">Multi-Year Policy Comparison</h5>
+                            <h5 className="text-sm font-semibold text-gray-800 mb-4"><i className="fas fa-columns mr-2 text-indigo-500"></i>Multi-Year Policy Comparison</h5>
                             
                             {/* Comparison Table */}
-                            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                            <div className="border border-gray-200 rounded-xl overflow-hidden">
                               <table className="w-full text-sm">
                                 <thead className="bg-gray-50 border-b border-gray-200">
                                   <tr>
@@ -4128,7 +4112,7 @@ const getSumInsuredFromData = (responseData) => {
                             
                             {/* Member-wise Comparison Section */}
                             <div className="mt-8">
-                              <h6 className="text-sm font-medium text-gray-700 mb-4">Member-wise Comparison</h6>
+                              <h6 className="text-sm font-semibold text-gray-800 mb-4"><i className="fas fa-users mr-2 text-indigo-500"></i>Member-wise Comparison</h6>
                               
                               <div className="space-y-4">
                                 {policiesForDisplay.map((policy, policyIndex) => {
@@ -4241,7 +4225,7 @@ const getSumInsuredFromData = (responseData) => {
                             {/* Underwriting Insights */}
                             {insights.length > 0 && (
                               <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                <h6 className="text-sm font-medium text-blue-900 mb-3">Underwriting Insights</h6>
+                                <h6 className="text-sm font-semibold text-blue-900 mb-3"><i className="fas fa-lightbulb mr-2 text-blue-500"></i>Underwriting Insights</h6>
                                 <ul className="text-sm text-blue-800 space-y-2">
                                   {insights.map((insight, index) => (
                                     <li key={index} className="flex items-start">

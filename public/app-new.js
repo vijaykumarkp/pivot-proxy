@@ -3272,441 +3272,356 @@ const getSumInsuredFromData = (responseData) => {
               </div>
             </div>
             
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="space-y-4">
-                <div className="bg-white rounded-lg shadow-lg p-6">
-                  <h2 className="text-xl font-semibold mb-4">Upload Current / Most Recent Policy Document</h2>
-                  <form onSubmit={handleFileUpload}>
-                    <div>
-                      <input
-                        type="file"
-                        onChange={handleFileChange}
-                        className="w-full p-2 border rounded"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                      />
-                      <p className="text-xs text-gray-500 mt-3 mb-4">Supported formats: PDF, JPG, JPEG, PNG</p>
-                      {fileError && (
-                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
-                          <p className="text-xs text-red-600">{fileError}</p>
-                        </div>
-                      )}
-                    </div>
-                    
-                                        
-                    <div className="flex space-x-3">
-                      <button
-                        type="submit"
-                        disabled={!file || loading || analysisCompleted}
-                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex-1"
-                      >
-                        {loading ? 'Processing...' : 'Analyse Policy'}
-                      </button>
-                      
-                      {/* Multi-Year Analysis Info - Only show after analysis completed */}
-                      {analysisCompleted && (
-                        <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-800">
-                          You can now compare and analyse older policies of the same family / insured to identify coverage changes, sum insured movement, cumulative bonus shifts, and continuity gaps. Please click on Multi Year policy analysis below.
-                        </div>
-                      )}
-                    </div>
-                  </form>
+            {/* Upload Form - compact inline bar matching TeleMER style */}
+            <div className="bg-white rounded-xl shadow-lg p-4 mb-6">
+              <form onSubmit={handleFileUpload} className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center space-x-2">
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                    <i className="fas fa-exchange-alt text-blue-600"></i>
+                  </div>
+                  <span className="text-sm font-semibold text-gray-700 hidden md:inline">Analyse Portability</span>
                 </div>
-                
-                {responseData && (
-                  <div className="bg-white rounded-lg shadow-lg p-6">
-                    <h3 className="text-xl font-semibold mb-4">Policy Summary</h3>
-                    <div className="space-y-4">
-                      <div>
-                        <h4 className="font-medium text-gray-800 mb-3">Policy Overview</h4>
-                        <div className="text-sm space-y-2">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Insurer Name:</span>
-                            <span className="font-medium" style={dataBlue}>
-                              {responseData?.response?.data?.policy_and_coverage_details?.optional_coverage_5 || 'Not Available'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Policy Type:</span>
-                            <span className="font-medium" style={dataBlue}>
-                              {responseData?.response?.data?.policy_and_coverage_details?.policy_type || 'Not Available'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Policy Period:</span>
-                            <span className="font-medium" style={dataBlue}>
-                              {responseData?.response?.data?.policy_and_coverage_details?.policy_start_date || 'Missing'} → {responseData?.response?.data?.policy_and_coverage_details?.policy_end_date || 'Missing'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Product:</span>
-                            <span className="font-medium" style={dataBlue}>
-                              {responseData?.response?.data?.policy_and_coverage_details?.policy_product_name || 'Not Available'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Policy Number:</span>
-                            <span className="font-medium" style={dataBlue}>
-                              {responseData?.response?.data?.policy_and_coverage_details?.policy_number || 'Missing'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <h4 className="font-medium text-gray-800 mb-3">Insured Snapshot</h4>
-                        <div className="text-xs">
-                          <div className="overflow-x-auto">
-                            <table className="w-full border-collapse">
-                              <thead>
-                                <tr className="border-b">
-                                  <th className="text-left py-1 px-1 font-medium text-gray-700">Insured Name</th>
-                                  <th className="text-left py-1 px-1 font-medium text-gray-700">Relationship</th>
-                                  <th className="text-left py-1 px-1 font-medium text-gray-700">Gender</th>
-                                  <th className="text-left py-1 px-1 font-medium text-gray-700">DOB / Age</th>
-                                  <th className="text-left py-1 px-1 font-medium text-gray-700">PED Declaration</th>
-                                  <th className="text-left py-1 px-1 font-medium text-gray-700">First Policy Started</th>
-                                  <th className="text-left py-1 px-1 font-medium text-gray-700">Individual Sum insured</th>
-                                  <th className="text-left py-1 px-1 font-medium text-gray-700">Individual Cumulative Bonus</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {responseData?.response?.data?.insured_details?.map((insured, index) => (
-                                  <tr key={index} className="border-b">
-                                    <td className="py-1 px-1 font-medium" style={dataBlue}>
-                                      {insured?.insured_name || 'Missing'}
-                                    </td>
-                                    <td className="py-1 px-1" style={dataBlue}>
-                                      {insured?.relationship || 'Not Available'}
-                                    </td>
-                                    <td className="py-1 px-1" style={dataBlue}>
-                                      {insured?.gender || 'Not Available'}
-                                    </td>
-                                    <td className="py-1 px-1" style={dataBlue}>
-                                      {insured?.age || (
-                                        insured?.dob 
-                                          ? new Date().getFullYear() - new Date(insured.dob).getFullYear()
-                                          : 'Missing'
-                                      )}
-                                    </td>
-                                    <td className="py-1 px-1" style={dataBlue}>
-                                      {insured?.declared_ped || 'Not Declared'}
-                                    </td>
-                                    <td className="py-1 px-1" style={dataBlue}>
-                                      {insured?.first_policy_started || 'Not Available'}
-                                    </td>
-                                    <td className="py-1 px-1" style={dataBlue}>
-                                      {insured?.individual_policy_sum_insured || 'Not Available'}
-                                    </td>
-                                    <td className="py-1 px-1" style={dataBlue}>
-                                      {insured?.individual_policy_cumulative_bonus || 'Not Available'}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <h4 className="font-medium text-gray-800 mb-3">Coverage Snapshot</h4>
-                        <div className="text-sm space-y-2">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Floater Sum Insured:</span>
-                            <span className="font-medium" style={dataBlue}>
-                              {responseData?.response?.data?.policy_and_coverage_details?.floater_basic_sum_insured || 'Missing'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Floater Cumulative Bonus:</span>
-                            <span className="font-medium" style={dataBlue}>
-                              {responseData?.response?.data?.policy_and_coverage_details?.floater_cumulative_bonus || 'Not Available'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">No. of Members:</span>
-                            <span className="font-medium" style={dataBlue}>
-                              {responseData?.response?.data?.insured_details?.length || 0}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="pt-4 border-t">
-                        <h4 className="font-medium text-gray-800 mb-3">Continuity Indicators</h4>
-                        <div className="text-sm space-y-2">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Cumulative Bonus:</span>
-                            <span className="font-medium" style={dataBlue}>
-                              {responseData?.response?.data?.policy_and_coverage_details?.floater_cumulative_bonus || 'Not Available'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">PED Declaration:</span>
-                            <span className="font-medium" style={dataBlue}>
-                              {responseData?.response?.data?.insured_details?.[0]?.declared_ped || 'Not Available'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Previous Claims:</span>
-                            <span className="font-medium" style={dataBlue}>
-                              {responseData?.response?.data?.policy_and_coverage_details?.previous_claims || 'Not Available'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                <div className="flex-1" style={{minWidth: 200}}>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 text-center hover:border-blue-400 transition-colors cursor-pointer"
+                    onClick={() => document.getElementById('port-file-input')?.click()}>
+                    <p className="text-sm text-gray-600">
+                      {file ? (<span><i className="fas fa-file-pdf mr-1 text-red-500"></i>{file.name}</span>) :
+                        (<span><i className="fas fa-cloud-upload-alt mr-1 text-gray-400"></i>Click to select file (PDF, JPG, PNG)</span>)}
+                    </p>
                   </div>
-                )}
+                  <input id="port-file-input" type="file" onChange={handleFileChange} className="hidden" accept=".pdf,.jpg,.jpeg,.png" />
+                </div>
+                <button type="submit" disabled={!file || loading || analysisCompleted}
+                  className="bg-blue-600 text-white px-5 py-2 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm">
+                  {loading ? (<span><i className="fas fa-spinner fa-spin mr-1"></i>Processing...</span>) :
+                    (<span><i className="fas fa-search mr-1"></i>Analyse</span>)}
+                </button>
+              </form>
+              {fileError && (
+                <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-600"><i className="fas fa-exclamation-circle mr-1"></i> {fileError}</p>
+                </div>
+              )}
+              {analysisCompleted && (
+                <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800"><i className="fas fa-info-circle mr-1"></i> You can now compare and analyse older policies below via Multi Year policy analysis.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Placeholder when no results yet */}
+            {!responseData && !loading && (
+              <div className="text-center py-16">
+                <i className="fas fa-exchange-alt text-6xl text-gray-200 mb-4"></i>
+                <p className="text-gray-400 text-lg">Upload a policy document above to see the analysis</p>
+                <p className="text-gray-300 text-sm mt-2">Choose file and click Analyse</p>
               </div>
-              
-              <div className="space-y-4">
-                {responseData && (() => {
-                  const pScore = scoreData?.score || 0;
-                  const pColor = pScore < 60 ? '#dc2626' : pScore < 80 ? '#ca8a04' : '#16a34a';
-                  const pLevel = pScore < 60 ? 'Needs Review' : pScore < 80 ? 'Review Recommended' : 'Good to Port';
-                  const pSettings = scoreData?.breakdown?.activeSettings;
-                  const pComponents = [
-                    { factor: 'Data Availability', points: scoreData?.breakdown?.dataAvailability?.points || 0, max: pSettings?.dataAvailability?.maxPoints || 30,
-                      detail: `${scoreData?.breakdown?.dataAvailability?.availableFields?.length || 0} fields available`, icon: 'fa-database' },
-                    { factor: 'PED Declaration', points: scoreData?.breakdown?.pedDeclaration?.points || 0, max: pSettings?.pedDeclaration?.points || 15,
-                      detail: scoreData?.breakdown?.pedDeclaration?.hasPED ? 'PED declared' : 'No PED', icon: 'fa-notes-medical' },
-                    { factor: 'Policy Currency', points: scoreData?.breakdown?.policyCurrency?.points || 0, max: pSettings?.policyCurrency?.points || 15,
-                      detail: scoreData?.breakdown?.policyCurrency?.daysUntilExpiry !== null ? `${scoreData?.breakdown?.policyCurrency?.daysUntilExpiry} days to expiry` : 'No expiry date', icon: 'fa-calendar-check' },
-                    { factor: 'Continuity', points: scoreData?.breakdown?.continuityBonus?.points || 0, max: pSettings?.continuityBonus?.points || 20,
-                      detail: scoreData?.breakdown?.continuityBonus?.hasContinuity ? 'Continuity data available' : 'No continuity data', icon: 'fa-link' },
-                    { factor: 'Sum Insured Risk', points: scoreData?.breakdown?.highSumInsuredRisk?.points || 0, max: pSettings?.highSumInsuredRisk?.points || 20,
-                      detail: scoreData?.breakdown?.highSumInsuredRisk?.points > 0 ? 'Within limits' : 'Exceeds limits', icon: 'fa-shield-alt' }
-                  ];
-                  const pRingRadius = 37;
-                  const pCircumference = 2 * Math.PI * pRingRadius;
-                  const pOffset = pCircumference - (pScore / 100) * pCircumference;
+            )}
 
-                  // Key metrics from response data
-                  const policyNumber = responseData?.response?.data?.policy_and_coverage_details?.policy_number || 'N/A';
-                  const policyType = responseData?.response?.data?.policy_and_coverage_details?.policy_type || 'N/A';
-                  const sumInsured = responseData?.response?.data?.policy_and_coverage_details?.floater_basic_sum_insured || 'N/A';
-                  const insuredCount = responseData?.response?.data?.insured_details?.length || 0;
-                  const hasPED = scoreData?.breakdown?.pedDeclaration?.hasPED;
+            {/* Loading state */}
+            {loading && (
+              <div className="text-center py-16">
+                <i className="fas fa-spinner fa-spin text-4xl text-blue-400 mb-4"></i>
+                <p className="text-gray-500">Analysing your policy document...</p>
+              </div>
+            )}
 
-                  return (
-                  <div className="bg-white rounded-xl shadow-lg p-6 space-y-4">
-                    {/* Score Banner - matching TeleMER style */}
-                    <div style={{borderLeft: `6px solid ${pColor}`, borderRadius: 12, padding: 20, background: '#fff'}}>
-                      <div className="flex items-center justify-between flex-wrap gap-4">
-                        <div className="flex items-center space-x-4">
-                          <div style={{position: 'relative', width: 90, height: 90}}>
-                            <svg width="90" height="90" style={{transform: 'rotate(-90deg)'}}>
-                              <circle cx="45" cy="45" r={pRingRadius} fill="none" stroke="#e5e7eb" strokeWidth="6" />
-                              <circle cx="45" cy="45" r={pRingRadius} fill="none" stroke={pColor} strokeWidth="6"
-                                strokeDasharray={pCircumference} strokeDashoffset={pOffset} strokeLinecap="round"
-                                style={{transition: 'stroke-dashoffset 1s ease'}} />
-                            </svg>
-                            <div style={{position: 'absolute', top: 0, left: 0, width: 90, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                              <span style={{fontSize: '22px', fontWeight: 700, color: pColor}}>{pScore}</span>
-                            </div>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500 uppercase font-semibold">PIVOT Portability Score</p>
-                            <p className="text-xl font-bold" style={{color: pColor}}>{pLevel}</p>
-                            <p className="text-xs text-gray-400">Policy: {policyNumber}</p>
-                          </div>
-                        </div>
-                        <div className="flex space-x-6">
-                          <div className="text-center px-4 py-2 bg-gray-50 rounded-lg">
-                            <p className="text-xs text-gray-500">Type</p>
-                            <p className="text-sm font-bold text-gray-800">{policyType}</p>
-                          </div>
-                          <div className="text-center px-4 py-2 bg-gray-50 rounded-lg">
-                            <p className="text-xs text-gray-500">Sum Insured</p>
-                            <p className="text-sm font-bold text-gray-800">{sumInsured}</p>
-                          </div>
-                          <div className="text-center px-4 py-2 bg-gray-50 rounded-lg">
-                            <p className="text-xs text-gray-500">Members</p>
-                            <p className="text-lg font-bold text-gray-800">{insuredCount}</p>
-                          </div>
-                          <div className="text-center px-4 py-2 rounded-lg" style={{background: hasPED ? '#fef2f2' : '#f0fdf4'}}>
-                            <p className="text-xs text-gray-500">PED</p>
-                            <p className="text-sm font-bold" style={{color: hasPED ? '#dc2626' : '#16a34a'}}>{hasPED ? 'Declared' : 'None'}</p>
-                          </div>
+            {/* Score Banner + Breakdown — full width */}
+            {responseData && (() => {
+              const pScore = scoreData?.score || 0;
+              const pColor = pScore < 60 ? '#dc2626' : pScore < 80 ? '#ca8a04' : '#16a34a';
+              const pLevel = pScore < 60 ? 'Needs Review' : pScore < 80 ? 'Review Recommended' : 'Good to Port';
+              const pSettings = scoreData?.breakdown?.activeSettings;
+              const pComponents = [
+                { factor: 'Data Availability', points: scoreData?.breakdown?.dataAvailability?.points || 0, max: pSettings?.dataAvailability?.maxPoints || 30,
+                  detail: `${scoreData?.breakdown?.dataAvailability?.availableFields?.length || 0} fields available`, icon: 'fa-database' },
+                { factor: 'PED Declaration', points: scoreData?.breakdown?.pedDeclaration?.points || 0, max: pSettings?.pedDeclaration?.points || 15,
+                  detail: scoreData?.breakdown?.pedDeclaration?.hasPED ? 'PED declared' : 'No PED', icon: 'fa-notes-medical' },
+                { factor: 'Policy Currency', points: scoreData?.breakdown?.policyCurrency?.points || 0, max: pSettings?.policyCurrency?.points || 15,
+                  detail: scoreData?.breakdown?.policyCurrency?.daysUntilExpiry !== null ? `${scoreData?.breakdown?.policyCurrency?.daysUntilExpiry} days to expiry` : 'No expiry date', icon: 'fa-calendar-check' },
+                { factor: 'Continuity', points: scoreData?.breakdown?.continuityBonus?.points || 0, max: pSettings?.continuityBonus?.points || 20,
+                  detail: scoreData?.breakdown?.continuityBonus?.hasContinuity ? 'Continuity data available' : 'No continuity data', icon: 'fa-link' },
+                { factor: 'Sum Insured Risk', points: scoreData?.breakdown?.highSumInsuredRisk?.points || 0, max: pSettings?.highSumInsuredRisk?.points || 20,
+                  detail: scoreData?.breakdown?.highSumInsuredRisk?.points > 0 ? 'Within limits' : 'Exceeds limits', icon: 'fa-shield-alt' }
+              ];
+              const pRingRadius = 37;
+              const pCircumference = 2 * Math.PI * pRingRadius;
+              const pOffset = pCircumference - (pScore / 100) * pCircumference;
+              const policyNumber = responseData?.response?.data?.policy_and_coverage_details?.policy_number || 'N/A';
+              const policyType = responseData?.response?.data?.policy_and_coverage_details?.policy_type || 'N/A';
+              const sumInsured = responseData?.response?.data?.policy_and_coverage_details?.floater_basic_sum_insured || 'N/A';
+              const insuredCount = responseData?.response?.data?.insured_details?.length || 0;
+              const hasPED = scoreData?.breakdown?.pedDeclaration?.hasPED;
+
+              return (
+              <div className="space-y-4 mb-6">
+                <div className="bg-white rounded-xl shadow-lg p-6" style={{borderLeft: `6px solid ${pColor}`}}>
+                  <div className="flex items-center justify-between flex-wrap gap-4">
+                    <div className="flex items-center space-x-4">
+                      <div style={{position: 'relative', width: 90, height: 90}}>
+                        <svg width="90" height="90" style={{transform: 'rotate(-90deg)'}}>
+                          <circle cx="45" cy="45" r={pRingRadius} fill="none" stroke="#e5e7eb" strokeWidth="6" />
+                          <circle cx="45" cy="45" r={pRingRadius} fill="none" stroke={pColor} strokeWidth="6"
+                            strokeDasharray={pCircumference} strokeDashoffset={pOffset} strokeLinecap="round"
+                            style={{transition: 'stroke-dashoffset 1s ease'}} />
+                        </svg>
+                        <div style={{position: 'absolute', top: 0, left: 0, width: 90, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                          <span style={{fontSize: '22px', fontWeight: 700, color: pColor}}>{pScore}</span>
                         </div>
                       </div>
-                      {/* Score Breakdown Bar */}
-                      <div className="mt-4 pt-4 border-t border-gray-100">
-                        <div className="flex items-center space-x-1" style={{height: 8, borderRadius: 4, overflow: 'hidden', background: '#e5e7eb'}}>
-                          {pComponents.map((b, i) => (
-                            <div key={i} style={{width: `${b.max}%`, height: '100%', background: b.points > 0 ? pColor : 'transparent', opacity: b.max > 0 ? 0.3 + (b.points / b.max) * 0.7 : 0.3, borderRadius: 2}} title={`${b.factor}: ${b.points}/${b.max}`}></div>
-                          ))}
-                        </div>
-                        <div className="flex justify-between mt-2 text-xs text-gray-500">
-                          {pComponents.map((b, i) => (
-                            <span key={i} title={b.detail}><i className={`fas ${b.icon} mr-1`}></i>{b.factor}: {b.points}/{b.max}</span>
-                          ))}
-                        </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase font-semibold">PIVOT Portability Score</p>
+                        <p className="text-xl font-bold" style={{color: pColor}}>{pLevel}</p>
+                        <p className="text-xs text-gray-400">Policy: {policyNumber}</p>
                       </div>
                     </div>
-
-                    {/* Score Breakdown Detail with progress bars */}
-                    <div>
-                      <details className="border border-gray-200 rounded-lg">
-                        <summary className="cursor-pointer px-4 py-3 font-medium text-gray-800 hover:bg-gray-50 flex justify-between items-center">
-                          <span><i className="fas fa-chart-bar mr-2 text-purple-600"></i>Detailed Score Breakdown</span>
-                          <i className="fas fa-chevron-down text-gray-400 text-xs"></i>
-                        </summary>
-                        <div className="px-4 py-3 border-t border-gray-200 space-y-3">
-                          {pComponents.map((b, i) => (
-                            <div key={i}>
-                              <div className="flex justify-between text-sm mb-1">
-                                <span className="text-gray-600"><i className={`fas ${b.icon} mr-2`}></i>{b.factor}</span>
-                                <span className="font-semibold text-gray-800">{b.points} / {b.max}</span>
-                              </div>
-                              <div className="w-full bg-gray-200 rounded-full" style={{height: 6}}>
-                                <div className="rounded-full" style={{width: `${b.max > 0 ? (b.points / b.max) * 100 : 0}%`, height: 6, background: pColor, transition: 'width 0.8s ease'}}></div>
-                              </div>
-                              <p className="text-xs text-gray-400 mt-1">{b.detail}</p>
-                            </div>
-                          ))}
-                          <div className="border-t pt-2 mt-2">
-                            <div className="text-sm font-medium text-gray-700 text-center">
-                              Final Score = {pComponents.map(c => c.points).join(' + ')} = {pScore}
-                            </div>
-                          </div>
-                        </div>
-                      </details>
+                    <div className="flex space-x-6">
+                      <div className="text-center px-4 py-2 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500">Type</p>
+                        <p className="text-sm font-bold text-gray-800">{policyType}</p>
+                      </div>
+                      <div className="text-center px-4 py-2 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500">Sum Insured</p>
+                        <p className="text-sm font-bold text-gray-800">{sumInsured}</p>
+                      </div>
+                      <div className="text-center px-4 py-2 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500">Members</p>
+                        <p className="text-lg font-bold text-gray-800">{insuredCount}</p>
+                      </div>
+                      <div className="text-center px-4 py-2 rounded-lg" style={{background: hasPED ? '#fef2f2' : '#f0fdf4'}}>
+                        <p className="text-xs text-gray-500">PED</p>
+                        <p className="text-sm font-bold" style={{color: hasPED ? '#dc2626' : '#16a34a'}}>{hasPED ? 'Declared' : 'None'}</p>
+                      </div>
                     </div>
                   </div>
-                  );
-                })()}
-                
-                {responseData && (
-                  <div className="bg-white rounded-lg shadow-lg p-6">
-                    <h3 className="text-xl font-semibold mb-4">Underwriter Flags</h3>
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <div className="flex items-center space-x-1" style={{height: 8, borderRadius: 4, overflow: 'hidden', background: '#e5e7eb'}}>
+                      {pComponents.map((b, i) => (
+                        <div key={i} style={{width: `${b.max}%`, height: '100%', background: b.points > 0 ? pColor : 'transparent', opacity: b.max > 0 ? 0.3 + (b.points / b.max) * 0.7 : 0.3, borderRadius: 2}} title={`${b.factor}: ${b.points}/${b.max}`}></div>
+                      ))}
+                    </div>
+                    <div className="flex justify-between mt-2 text-xs text-gray-500">
+                      {pComponents.map((b, i) => (
+                        <span key={i} title={b.detail}><i className={`fas ${b.icon} mr-1`}></i>{b.factor}: {b.points}/{b.max}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Detailed Score Breakdown — collapsible */}
+                <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+                  <details className="group">
+                    <summary className="cursor-pointer px-4 py-3 font-medium text-gray-800 hover:bg-gray-50 flex justify-between items-center">
+                      <span><i className="fas fa-chart-bar mr-2 text-purple-600"></i>Detailed Score Breakdown</span>
+                      <div className="flex items-center space-x-3">
+                        <span className="text-sm text-gray-500">Final Score = {pComponents.map(c => c.points).join(' + ')} = {pScore}</span>
+                        <i className="fas fa-chevron-down text-gray-400 text-xs"></i>
+                      </div>
+                    </summary>
+                    <div className="px-4 py-3 border-t border-gray-200 space-y-3">
+                      {pComponents.map((b, i) => (
+                        <div key={i}>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="text-gray-600"><i className={`fas ${b.icon} mr-2`}></i>{b.factor}</span>
+                            <span className="font-semibold text-gray-800">{b.points} / {b.max}</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full" style={{height: 6}}>
+                            <div className="rounded-full" style={{width: `${b.max > 0 ? (b.points / b.max) * 100 : 0}%`, height: 6, background: pColor, transition: 'width 0.8s ease'}}></div>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-1">{b.detail}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+              </div>
+              );
+            })()}
+
+            {/* Two-column: Policy Summary + Underwriter Flags */}
+            {responseData && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4"><i className="fas fa-file-alt mr-2 text-blue-600"></i>Policy Summary</h3>
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-medium text-gray-800 mb-3">Policy Overview</h4>
                     <div className="text-sm space-y-2">
-                      {(() => {
-                        const settings = scoreData?.breakdown?.activeSettings;
-                        const responseData = scoreData?.responseData;
-                        const flags = [];
-                        
-                        // Critical Data Missing
-                        if (!responseData?.policy_and_coverage_details?.policy_number) {
-                          flags.push({
-                            name: 'Policy Number',
-                            status: 'Missing',
-                            type: 'critical'
-                          });
-                        }
-                        
-                        if (!responseData?.policy_and_coverage_details?.policy_start_date) {
-                          flags.push({
-                            name: 'Policy Start Date', 
-                            status: 'Missing',
-                            type: 'critical'
-                          });
-                        }
-                        
-                        if (!responseData?.policy_and_coverage_details?.policy_end_date) {
-                          flags.push({
-                            name: 'Policy End Date',
-                            status: 'Missing', 
-                            type: 'critical'
-                          });
-                        }
-                        
-                        if (!responseData?.insured_details || responseData.insured_details.length === 0) {
-                          flags.push({
-                            name: 'Insured Details',
-                            status: 'Missing',
-                            type: 'critical'
-                          });
-                        }
-                        
-                        // PED Declaration (Risk Factor)
-                        if (scoreData?.breakdown?.pedDeclaration?.hasPED) {
-                          flags.push({
-                            name: 'PED Declaration',
-                            status: 'Declared',
-                            type: 'risk'
-                          });
-                        }
-                        
-                        // Policy Continuity Missing
-                        if (!scoreData?.breakdown?.continuityBonus?.hasContinuity) {
-                          flags.push({
-                            name: 'Policy Continuity',
-                            status: 'Missing',
-                            type: 'continuity'
-                          });
-                        }
-                        
-                        // Sum Insured Risk
-                        if (!scoreData?.breakdown?.highSumInsuredRisk?.individualCondition) {
-                          flags.push({
-                            name: 'Individual Sum Insured',
-                            status: `Exceeds ₹${(settings?.highSumInsuredRisk?.individualLimit || 500000).toLocaleString()}`,
-                            type: 'risk'
-                          });
-                        }
-                        
-                        if (!scoreData?.breakdown?.highSumInsuredRisk?.floaterCondition) {
-                          flags.push({
-                            name: 'Floater Sum Insured',
-                            status: `Exceeds ₹${(settings?.highSumInsuredRisk?.floaterLimit || 1000000).toLocaleString()}`,
-                            type: 'risk'
-                          });
-                        }
-                        
-                        // Policy Currency Issue
-                        if (scoreData?.breakdown?.policyCurrency?.points === 0) {
-                          flags.push({
-                            name: 'Policy Currency',
-                            status: `Expires outside ${settings?.policyCurrency?.defaultDays || 30} days`,
-                            type: 'currency'
-                          });
-                        }
-                        
-                        if (flags.length === 0) {
-                          return (
-                            <div className="text-center py-4">
-                              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                                ✓ All criteria favorable for portability
-                              </span>
-                            </div>
-                          );
-                        }
-                        
-                        return flags.map((flag, index) => (
-                          <div key={index} className={`border rounded-lg p-3 ${
-                            flag.type === 'critical' ? 'border-red-200 bg-red-50' :
-                            flag.type === 'risk' ? 'border-amber-200 bg-amber-50' :
-                            'border-gray-200 bg-gray-50'
-                          }`}>
-                            <div className="flex justify-between items-center">
-                              <span className={`font-medium ${
-                                flag.type === 'critical' ? 'text-red-800' :
-                                flag.type === 'risk' ? 'text-amber-800' :
-                                'text-gray-800'
-                              }`}>
-                                {flag.name}
-                              </span>
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                flag.type === 'critical' ? 'bg-red-100 text-red-800' :
-                                flag.type === 'risk' ? 'bg-amber-100 text-amber-800' :
-                                'bg-gray-100 text-gray-800'
-                              }`}>
-                                {flag.status}
-                              </span>
-                            </div>
-                          </div>
-                        ));
-                      })()}
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Insurer Name:</span>
+                        <span className="font-medium" style={dataBlue}>
+                          {responseData?.response?.data?.policy_and_coverage_details?.optional_coverage_5 || 'Not Available'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Policy Type:</span>
+                        <span className="font-medium" style={dataBlue}>
+                          {responseData?.response?.data?.policy_and_coverage_details?.policy_type || 'Not Available'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Policy Period:</span>
+                        <span className="font-medium" style={dataBlue}>
+                          {responseData?.response?.data?.policy_and_coverage_details?.policy_start_date || 'Missing'} → {responseData?.response?.data?.policy_and_coverage_details?.policy_end_date || 'Missing'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Product:</span>
+                        <span className="font-medium" style={dataBlue}>
+                          {responseData?.response?.data?.policy_and_coverage_details?.policy_product_name || 'Not Available'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Policy Number:</span>
+                        <span className="font-medium" style={dataBlue}>
+                          {responseData?.response?.data?.policy_and_coverage_details?.policy_number || 'Missing'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                )}
+
+                  <div>
+                    <h4 className="font-medium text-gray-800 mb-3">Coverage Snapshot</h4>
+                    <div className="text-sm space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Floater Sum Insured:</span>
+                        <span className="font-medium" style={dataBlue}>
+                          {responseData?.response?.data?.policy_and_coverage_details?.floater_basic_sum_insured || 'Missing'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Floater Cumulative Bonus:</span>
+                        <span className="font-medium" style={dataBlue}>
+                          {responseData?.response?.data?.policy_and_coverage_details?.floater_cumulative_bonus || 'Not Available'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">No. of Members:</span>
+                        <span className="font-medium" style={dataBlue}>
+                          {responseData?.response?.data?.insured_details?.length || 0}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t">
+                    <h4 className="font-medium text-gray-800 mb-3">Continuity Indicators</h4>
+                    <div className="text-sm space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Cumulative Bonus:</span>
+                        <span className="font-medium" style={dataBlue}>
+                          {responseData?.response?.data?.policy_and_coverage_details?.floater_cumulative_bonus || 'Not Available'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">PED Declaration:</span>
+                        <span className="font-medium" style={dataBlue}>
+                          {responseData?.response?.data?.insured_details?.[0]?.declared_ped || 'Not Available'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Previous Claims:</span>
+                        <span className="font-medium" style={dataBlue}>
+                          {responseData?.response?.data?.policy_and_coverage_details?.previous_claims || 'Not Available'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4"><i className="fas fa-flag mr-2 text-amber-500"></i>Underwriter Flags</h3>
+                <div className="text-sm space-y-2">
+                  {(() => {
+                    const settings = scoreData?.breakdown?.activeSettings;
+                    const rd = scoreData?.responseData;
+                    const flags = [];
+                    if (!rd?.policy_and_coverage_details?.policy_number) flags.push({ name: 'Policy Number', status: 'Missing', type: 'critical' });
+                    if (!rd?.policy_and_coverage_details?.policy_start_date) flags.push({ name: 'Policy Start Date', status: 'Missing', type: 'critical' });
+                    if (!rd?.policy_and_coverage_details?.policy_end_date) flags.push({ name: 'Policy End Date', status: 'Missing', type: 'critical' });
+                    if (!rd?.insured_details || rd.insured_details.length === 0) flags.push({ name: 'Insured Details', status: 'Missing', type: 'critical' });
+                    if (scoreData?.breakdown?.pedDeclaration?.hasPED) flags.push({ name: 'PED Declaration', status: 'Declared', type: 'risk' });
+                    if (!scoreData?.breakdown?.continuityBonus?.hasContinuity) flags.push({ name: 'Policy Continuity', status: 'Missing', type: 'continuity' });
+                    if (!scoreData?.breakdown?.highSumInsuredRisk?.individualCondition) flags.push({ name: 'Individual Sum Insured', status: `Exceeds ₹${(settings?.highSumInsuredRisk?.individualLimit || 500000).toLocaleString()}`, type: 'risk' });
+                    if (!scoreData?.breakdown?.highSumInsuredRisk?.floaterCondition) flags.push({ name: 'Floater Sum Insured', status: `Exceeds ₹${(settings?.highSumInsuredRisk?.floaterLimit || 1000000).toLocaleString()}`, type: 'risk' });
+                    if (scoreData?.breakdown?.policyCurrency?.points === 0) flags.push({ name: 'Policy Currency', status: `Expires outside ${settings?.policyCurrency?.defaultDays || 30} days`, type: 'currency' });
+
+                    if (flags.length === 0) {
+                      return (
+                        <div className="text-center py-4">
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                            All criteria favorable for portability
+                          </span>
+                        </div>
+                      );
+                    }
+                    return flags.map((flag, index) => (
+                      <div key={index} className={`border rounded-lg p-3 ${
+                        flag.type === 'critical' ? 'border-red-200 bg-red-50' :
+                        flag.type === 'risk' ? 'border-amber-200 bg-amber-50' :
+                        'border-gray-200 bg-gray-50'
+                      }`}>
+                        <div className="flex justify-between items-center">
+                          <span className={`font-medium ${
+                            flag.type === 'critical' ? 'text-red-800' :
+                            flag.type === 'risk' ? 'text-amber-800' :
+                            'text-gray-800'
+                          }`}>{flag.name}</span>
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            flag.type === 'critical' ? 'bg-red-100 text-red-800' :
+                            flag.type === 'risk' ? 'bg-amber-100 text-amber-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>{flag.status}</span>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
               </div>
             </div>
+            )}
+
+            {/* Insured Snapshot — full width table */}
+            {responseData && (
+            <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4"><i className="fas fa-users mr-2 text-green-600"></i>Insured Snapshot</h3>
+              <div className="text-xs overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-1 px-1 font-medium text-gray-700">Insured Name</th>
+                      <th className="text-left py-1 px-1 font-medium text-gray-700">Relationship</th>
+                      <th className="text-left py-1 px-1 font-medium text-gray-700">Gender</th>
+                      <th className="text-left py-1 px-1 font-medium text-gray-700">DOB / Age</th>
+                      <th className="text-left py-1 px-1 font-medium text-gray-700">PED Declaration</th>
+                      <th className="text-left py-1 px-1 font-medium text-gray-700">First Policy Started</th>
+                      <th className="text-left py-1 px-1 font-medium text-gray-700">Individual Sum insured</th>
+                      <th className="text-left py-1 px-1 font-medium text-gray-700">Individual Cumulative Bonus</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {responseData?.response?.data?.insured_details?.map((insured, index) => (
+                      <tr key={index} className="border-b">
+                        <td className="py-1 px-1 font-medium" style={dataBlue}>{insured?.insured_name || 'Missing'}</td>
+                        <td className="py-1 px-1" style={dataBlue}>{insured?.relationship || 'Not Available'}</td>
+                        <td className="py-1 px-1" style={dataBlue}>{insured?.gender || 'Not Available'}</td>
+                        <td className="py-1 px-1" style={dataBlue}>{insured?.age || (insured?.dob ? new Date().getFullYear() - new Date(insured.dob).getFullYear() : 'Missing')}</td>
+                        <td className="py-1 px-1" style={dataBlue}>{insured?.declared_ped || 'Not Declared'}</td>
+                        <td className="py-1 px-1" style={dataBlue}>{insured?.first_policy_started || 'Not Available'}</td>
+                        <td className="py-1 px-1" style={dataBlue}>{insured?.individual_policy_sum_insured || 'Not Available'}</td>
+                        <td className="py-1 px-1" style={dataBlue}>{insured?.individual_policy_cumulative_bonus || 'Not Available'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            )}
+
           </div>
         </div>
-        
+
         {/* Multi-Year Policy Analysis Placeholder */}
         <div className="container mx-auto px-4 py-6">
           <div className="max-w-4xl mx-auto">

@@ -247,6 +247,10 @@ app.use('/api/ml_process', (req, res, next) => {
   if (!req.clientInfo) return next();
   getClientRateLimiter(req.clientInfo.client_id, req.clientInfo.rate_limit)(req, res, next);
 });
+app.use('/api/rfq', (req, res, next) => {
+  if (!req.clientInfo) return next();
+  getClientRateLimiter(req.clientInfo.client_id, req.clientInfo.rate_limit)(req, res, next);
+});
 
 /* =========================
    Module access gating
@@ -256,7 +260,8 @@ const ENDPOINT_MODULE_MAP = {
   '/api/portability': 'portability',
   '/api/ml_process': 'portability',
   '/ml_process': 'portability',
-  '/api/underwriting': 'telemer'
+  '/api/underwriting': 'telemer',
+  '/api/rfq': 'rfq'
 };
 
 function requireModule(req, res, next) {
@@ -659,6 +664,84 @@ app.post("/api/underwriting/analyze", upload.single("input_file"), async (req, r
     res.json(result);
   } catch (error) {
     console.error("[API] underwriting/analyze error:", error.message);
+    res.status(500).json({ error: "Processing error. Please try again." });
+  }
+});
+
+/* =========================
+   RFQ Extraction (stub with sample data for UI testing)
+========================= */
+app.post("/api/rfq/extract", upload.single("input_file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+    console.log(`[API] rfq/extract - file: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB)`);
+
+    // TODO: Replace with actual extraction API call
+    // For now, return sample extracted data to test UI
+    const sampleData = {
+      companyDetails: {
+        company_name: { value: 'Acme Technologies Pvt Ltd', status: 'extracted' },
+        industry: { value: 'Information Technology', status: 'extracted' },
+        company_address: { value: '2nd Floor, Tower B, Cyber City, Gurgaon 122002', status: 'extracted' },
+        gstin: { value: null, status: 'missing', note: 'GSTIN not found in document' },
+        contact_person: { value: 'Rahul Mehra (HR Head)', status: 'extracted' },
+        contact_email: { value: 'rahul.mehra@acmetech.in', status: 'extracted' },
+        contact_phone: { value: null, status: 'clarification', note: 'Multiple phone numbers found — confirm primary contact' },
+      },
+      policyRequirements: {
+        policy_type: { value: 'GMC (Group Mediclaim)', status: 'extracted' },
+        policy_start_date: { value: '01-Apr-2026', status: 'extracted' },
+        policy_end_date: { value: '31-Mar-2027', status: 'extracted' },
+        sum_insured_basis: { value: 'Graded', status: 'extracted' },
+        sum_insured_values: { value: 'Grade A: 5L, Grade B: 3L, Grade C: 2L', status: 'extracted' },
+        room_rent_limit: { value: 'Single AC Room', status: 'extracted' },
+        maternity_cover: { value: null, status: 'clarification', note: 'Document mentions maternity but limits not specified' },
+        opd_cover: { value: 'Not Required', status: 'extracted' },
+        pre_existing_cover: { value: null, status: 'clarification', note: 'PED cover mentioned but waiting period unclear' },
+        waiting_period: { value: null, status: 'missing' },
+        co_pay: { value: 'Nil', status: 'extracted' },
+        sublimits: { value: null, status: 'missing', note: 'No sub-limit details found' },
+      },
+      demographics: {
+        total_lives: { value: '342', status: 'extracted' },
+        employee_count: { value: '156', status: 'extracted' },
+        spouse_count: { value: '120', status: 'extracted' },
+        child_count: { value: '66', status: 'extracted' },
+        parent_count: { value: null, status: 'clarification', note: 'Parent cover requested but count not provided' },
+        average_age: { value: '33.5 years', status: 'extracted' },
+        age_band_distribution: { value: '18-25: 42, 26-35: 78, 36-45: 56, 46-55: 34, 55+: 12', status: 'extracted' },
+        male_female_ratio: { value: '68:32', status: 'extracted' },
+      },
+      existingPolicy: {
+        existing_insurer: { value: 'ICICI Lombard', status: 'extracted' },
+        existing_policy_number: { value: null, status: 'missing' },
+        existing_premium: { value: '18,50,000', status: 'extracted' },
+        existing_sum_insured: { value: '3L - 5L (Graded)', status: 'extracted' },
+        claims_ratio: { value: '72%', status: 'extracted' },
+        claims_count: { value: '38', status: 'extracted' },
+        large_claims: { value: null, status: 'clarification', note: 'Document references large claims but amounts not detailed' },
+        renewal_date: { value: '01-Apr-2026', status: 'extracted' },
+      },
+      brokerDetails: {
+        broker_name: { value: 'Marsh India Insurance Brokers', status: 'extracted' },
+        broker_contact: { value: null, status: 'missing' },
+        broker_license: { value: null, status: 'missing' },
+      },
+      specialConditions: {
+        exclusions: { value: null, status: 'missing' },
+        endorsements: { value: 'Day 1 PED Cover requested for Grade A', status: 'clarification', note: 'Confirm if this applies to all members or only new joiners' },
+        additional_notes: { value: 'Corporate buffer of 10% requested. Cashless facility at all network hospitals mandatory.', status: 'extracted' },
+      }
+    };
+
+    // Simulate a brief processing delay
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    res.json(sampleData);
+
+  } catch (error) {
+    console.error("[API] rfq/extract error:", error.message);
     res.status(500).json({ error: "Processing error. Please try again." });
   }
 });

@@ -1232,6 +1232,13 @@ const App = () => {
   const [uwExpandedDecl, setUwExpandedDecl] = useState(null);
   const [uwShowBreakdown, setUwShowBreakdown] = useState(false);
 
+  // RFQ Module states
+  const [rfqFile, setRfqFile] = useState(null);
+  const [rfqLoading, setRfqLoading] = useState(false);
+  const [rfqData, setRfqData] = useState(null);
+  const [rfqFileError, setRfqFileError] = useState(null);
+  const [rfqExpandedSection, setRfqExpandedSection] = useState(null);
+
   // Session & permissions state (Phase 2)
   const [sessionInfo, setSessionInfo] = useState(null);
   const [allowedModules, setAllowedModules] = useState([]);
@@ -1305,6 +1312,144 @@ const App = () => {
       setUwLoading(false);
     }
   };
+
+  // ========== RFQ MODULE ==========
+  // Quote-ready data model for Group Health RFQ
+  const RFQ_DATA_MODEL = {
+    companyDetails: {
+      label: 'Company Details', icon: 'fa-building', fields: {
+        company_name: { label: 'Company Name', required: true },
+        industry: { label: 'Industry / Sector', required: true },
+        company_address: { label: 'Registered Address', required: false },
+        gstin: { label: 'GSTIN', required: false },
+        contact_person: { label: 'Contact Person', required: true },
+        contact_email: { label: 'Contact Email', required: true },
+        contact_phone: { label: 'Contact Phone', required: false },
+      }
+    },
+    policyRequirements: {
+      label: 'Policy Requirements', icon: 'fa-file-shield', fields: {
+        policy_type: { label: 'Policy Type (GMC / GPA / GTL)', required: true },
+        policy_start_date: { label: 'Policy Start Date', required: true },
+        policy_end_date: { label: 'Policy End Date', required: true },
+        sum_insured_basis: { label: 'Sum Insured Basis (Flat / Graded)', required: true },
+        sum_insured_values: { label: 'Sum Insured Slabs / Values', required: true },
+        room_rent_limit: { label: 'Room Rent Limit', required: false },
+        maternity_cover: { label: 'Maternity Cover', required: false },
+        opd_cover: { label: 'OPD Cover', required: false },
+        pre_existing_cover: { label: 'Pre-Existing Disease Cover', required: false },
+        waiting_period: { label: 'Waiting Period', required: false },
+        co_pay: { label: 'Co-pay Requirement', required: false },
+        sublimits: { label: 'Sub-Limits / Capping', required: false },
+      }
+    },
+    demographics: {
+      label: 'Employee Demographics', icon: 'fa-users', fields: {
+        total_lives: { label: 'Total Lives to be Covered', required: true },
+        employee_count: { label: 'Employee Count', required: true },
+        spouse_count: { label: 'Spouse Count', required: false },
+        child_count: { label: 'Children Count', required: false },
+        parent_count: { label: 'Parent Count', required: false },
+        average_age: { label: 'Average Age of Group', required: false },
+        age_band_distribution: { label: 'Age Band Distribution', required: true },
+        male_female_ratio: { label: 'Male : Female Ratio', required: false },
+      }
+    },
+    existingPolicy: {
+      label: 'Existing Policy Details', icon: 'fa-history', fields: {
+        existing_insurer: { label: 'Current Insurer', required: false },
+        existing_policy_number: { label: 'Current Policy Number', required: false },
+        existing_premium: { label: 'Current Premium', required: false },
+        existing_sum_insured: { label: 'Current Sum Insured', required: false },
+        claims_ratio: { label: 'Incurred Claims Ratio (ICR)', required: true },
+        claims_count: { label: 'Number of Claims (Last Year)', required: false },
+        large_claims: { label: 'Large Claims Details', required: false },
+        renewal_date: { label: 'Renewal Due Date', required: true },
+      }
+    },
+    brokerDetails: {
+      label: 'Broker / Intermediary', icon: 'fa-handshake', fields: {
+        broker_name: { label: 'Broker / TPA Name', required: false },
+        broker_contact: { label: 'Broker Contact', required: false },
+        broker_license: { label: 'Broker License No.', required: false },
+      }
+    },
+    specialConditions: {
+      label: 'Special Conditions & Notes', icon: 'fa-clipboard-list', fields: {
+        exclusions: { label: 'Specific Exclusions Requested', required: false },
+        endorsements: { label: 'Special Endorsements', required: false },
+        additional_notes: { label: 'Additional Notes / Requirements', required: false },
+      }
+    }
+  };
+
+  // Compute extraction completeness from RFQ data
+  const computeRfqCompleteness = (extractedData) => {
+    if (!extractedData) return { total: 0, extracted: 0, clarification: 0, missing: 0, bySection: {} };
+    let total = 0, extracted = 0, clarification = 0, missing = 0;
+    const bySection = {};
+    Object.entries(RFQ_DATA_MODEL).forEach(([sectionKey, section]) => {
+      let sTotal = 0, sExtracted = 0, sClarification = 0, sMissing = 0;
+      Object.entries(section.fields).forEach(([fieldKey, fieldDef]) => {
+        sTotal++;
+        total++;
+        const val = extractedData?.[sectionKey]?.[fieldKey];
+        if (val && val.status === 'extracted') { sExtracted++; extracted++; }
+        else if (val && val.status === 'clarification') { sClarification++; clarification++; }
+        else { sMissing++; missing++; }
+      });
+      bySection[sectionKey] = { total: sTotal, extracted: sExtracted, clarification: sClarification, missing: sMissing };
+    });
+    return { total, extracted, clarification, missing, bySection, pct: total > 0 ? Math.round((extracted / total) * 100) : 0 };
+  };
+
+  const handleRfqFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+    if (selectedFile) {
+      const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      if (!allowedTypes.includes(selectedFile.type)) {
+        setRfqFileError('Please upload a PDF, JPG, PNG, Excel, or Word file');
+        setRfqFile(null);
+        return;
+      }
+      if (selectedFile.size > 20 * 1024 * 1024) {
+        setRfqFileError('File size must be less than 20MB');
+        setRfqFile(null);
+        return;
+      }
+      setRfqFileError(null);
+      setRfqFile(selectedFile);
+    }
+  };
+
+  const handleRfqUpload = async (e) => {
+    e.preventDefault();
+    if (!rfqFile) return;
+    setRfqFileError(null);
+    setRfqLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('input_file', rfqFile);
+      const response = await fetch('/api/rfq/extract', {
+        method: 'POST',
+        body: formData
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Extraction failed (HTTP ' + response.status + ')');
+      }
+      const data = await response.json();
+      setRfqData(data);
+    } catch (err) {
+      console.error('RFQ Error:', err);
+      setRfqFileError(err.message);
+    } finally {
+      setRfqLoading(false);
+    }
+  };
+  // ========== END RFQ MODULE ==========
 
   // Utility function to calculate age from DOB
   const calculateAge = (dob) => {
@@ -2773,10 +2918,11 @@ const getSumInsuredFromData = (responseData) => {
                 </div>
               </div>
 
-              {/* RFQ Module (Coming Soon) */}
-              <div className="bg-white rounded-xl shadow-lg overflow-hidden border-2 border-indigo-300 relative">
+              {/* RFQ Module */}
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer border-2 border-indigo-400 relative"
+                onClick={() => setPage('rfq')}>
                 <div className="absolute top-3 right-3">
-                  <span className="px-2 py-1 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full uppercase">Coming Soon</span>
+                  <span className="px-2 py-1 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full uppercase">Beta</span>
                 </div>
                 <div className="p-6">
                   <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center mb-4">
@@ -2786,9 +2932,8 @@ const getSumInsuredFromData = (responseData) => {
                   <p className="text-gray-600 mb-4">
                     AI-powered RFQ extraction for Group Health — from quote generation to policy fulfilment
                   </p>
-                  <div className="flex items-center text-indigo-500 font-medium">
-                    <i className="fas fa-flask mr-2"></i>
-                    <span>In Development</span>
+                  <div className="flex items-center text-indigo-600 font-medium">
+                    <span>Launch RFQ Extraction →</span>
                   </div>
                 </div>
               </div>
@@ -3194,6 +3339,258 @@ const getSumInsuredFromData = (responseData) => {
       </div>
     );
   }
+
+  // ========== RFQ PAGE ==========
+  if (page === 'rfq') {
+    const completeness = computeRfqCompleteness(rfqData);
+    const pctColor = completeness.pct >= 80 ? '#16a34a' : completeness.pct >= 50 ? '#ca8a04' : '#dc2626';
+    const ringRadius = 42;
+    const ringCircumference = 2 * Math.PI * ringRadius;
+    const ringOffset = ringCircumference - (completeness.pct / 100) * ringCircumference;
+
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b">
+          <div className="container mx-auto px-4 py-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-6 w-56">
+                <img src="/assets/images/attributum-logo.png" alt="Attributum" className="h-12 object-contain"
+                  onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }}
+                />
+                <div className="w-40 h-12 bg-indigo-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                  <span className="text-white font-bold text-sm">Attributum</span>
+                </div>
+              </div>
+              <div className="text-center flex-1">
+                <h1 className="text-2xl font-bold text-gray-800">PIVOT RFQ</h1>
+                <p className="text-sm text-gray-500">AI-powered Group Health RFQ Extraction</p>
+              </div>
+              <div className="flex items-center space-x-6 w-56 justify-end">
+                <img src="/assets/images/pivot-logo.png" alt="PIVOT" className="h-16 object-contain"
+                  onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }}
+                />
+                <div className="w-40 h-16 bg-indigo-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                  <span className="text-white font-bold text-xl">PIVOT</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="container mx-auto px-4 py-6">
+          <div className="max-w-7xl mx-auto">
+            {/* Sub-header with navigation */}
+            <div className="flex justify-between items-center mb-6">
+              <p className="text-xs text-gray-500">Upload Group Health RFQ documents for AI-powered data extraction</p>
+              <button onClick={() => { setPage('home'); setRfqData(null); setRfqFile(null); }}
+                className="px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 text-sm">
+                ← Back to Home
+              </button>
+            </div>
+
+            {/* Upload Form - compact inline bar */}
+            <div className="bg-white rounded-xl shadow-lg p-4 mb-6">
+              <form onSubmit={handleRfqUpload} className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center space-x-2">
+                  <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
+                    <i className="fas fa-file-invoice text-indigo-600"></i>
+                  </div>
+                  <span className="text-sm font-semibold text-gray-700 hidden md:inline">Extract RFQ</span>
+                </div>
+                <div className="flex-1" style={{minWidth: 200}}>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 text-center hover:border-indigo-400 transition-colors cursor-pointer"
+                    onClick={() => document.getElementById('rfq-file-input')?.click()}>
+                    <p className="text-sm text-gray-600">
+                      {rfqFile ? (<span><i className="fas fa-file-pdf mr-1 text-red-500"></i>{rfqFile.name}</span>) :
+                        (<span><i className="fas fa-cloud-upload-alt mr-1 text-gray-400"></i>Click to select RFQ document (PDF, Excel, Word, JPG)</span>)}
+                    </p>
+                  </div>
+                  <input id="rfq-file-input" type="file" onChange={handleRfqFileChange} className="hidden" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.docx" />
+                </div>
+                <button type="submit" disabled={!rfqFile || rfqLoading}
+                  className="bg-indigo-600 text-white px-5 py-2 rounded-lg font-semibold hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm">
+                  {rfqLoading ? (<span><i className="fas fa-spinner fa-spin mr-1"></i>Extracting...</span>) :
+                    (<span><i className="fas fa-search mr-1"></i>Extract</span>)}
+                </button>
+              </form>
+              {rfqFileError && (
+                <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-600"><i className="fas fa-exclamation-circle mr-1"></i> {rfqFileError}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Placeholder when no results */}
+            {!rfqData && !rfqLoading && (
+              <div className="text-center py-16">
+                <i className="fas fa-file-invoice text-6xl text-gray-200 mb-4"></i>
+                <p className="text-gray-400 text-lg">Upload a Group Health RFQ document to begin extraction</p>
+                <p className="text-gray-300 text-sm mt-2">Supports PDF, Excel, Word, and image formats</p>
+              </div>
+            )}
+
+            {/* Loading state */}
+            {rfqLoading && (
+              <div className="text-center py-16">
+                <i className="fas fa-spinner fa-spin text-4xl text-indigo-400 mb-4"></i>
+                <p className="text-gray-500">Extracting data from your RFQ document...</p>
+                <p className="text-gray-400 text-xs mt-2">This may take a moment for large documents</p>
+              </div>
+            )}
+
+            {/* Results */}
+            {rfqData && (
+              <div className="space-y-6">
+
+                {/* Extraction Completeness Banner */}
+                <div className="bg-white rounded-xl shadow-lg p-6" style={{borderLeft: `6px solid ${pctColor}`}}>
+                  <div className="flex items-center justify-between flex-wrap gap-4">
+                    {/* Completeness Ring */}
+                    <div className="flex items-center space-x-4">
+                      <div style={{position: 'relative', width: 100, height: 100}}>
+                        <svg width="100" height="100" style={{transform: 'rotate(-90deg)'}}>
+                          <circle cx="50" cy="50" r={ringRadius} fill="none" stroke="#e5e7eb" strokeWidth="7" />
+                          <circle cx="50" cy="50" r={ringRadius} fill="none" stroke={pctColor} strokeWidth="7"
+                            strokeDasharray={ringCircumference} strokeDashoffset={ringOffset} strokeLinecap="round"
+                            style={{transition: 'stroke-dashoffset 1s ease'}} />
+                        </svg>
+                        <div style={{position: 'absolute', top: 0, left: 0, width: 100, height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                          <span style={{fontSize: '24px', fontWeight: 700, color: pctColor}}>{completeness.pct}%</span>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase font-semibold">Extraction Completeness</p>
+                        <p className="text-xl font-bold" style={{color: pctColor}}>
+                          {completeness.pct >= 80 ? 'Quote Ready' : completeness.pct >= 50 ? 'Needs Clarification' : 'Incomplete'}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">{completeness.extracted} of {completeness.total} fields extracted</p>
+                      </div>
+                    </div>
+
+                    {/* Key Metrics */}
+                    <div className="flex space-x-4">
+                      <div className="text-center px-4 py-2 bg-green-50 rounded-lg">
+                        <p className="text-xs text-gray-500">Extracted</p>
+                        <p className="text-lg font-bold text-green-600">{completeness.extracted}</p>
+                        <p className="text-xs text-green-600">fields</p>
+                      </div>
+                      <div className="text-center px-4 py-2 bg-amber-50 rounded-lg">
+                        <p className="text-xs text-gray-500">Clarification</p>
+                        <p className="text-lg font-bold text-amber-600">{completeness.clarification}</p>
+                        <p className="text-xs text-amber-600">needed</p>
+                      </div>
+                      <div className="text-center px-4 py-2 bg-red-50 rounded-lg">
+                        <p className="text-xs text-gray-500">Missing</p>
+                        <p className="text-lg font-bold text-red-600">{completeness.missing}</p>
+                        <p className="text-xs text-red-600">fields</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section-level progress bar */}
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <div className="flex items-center space-x-1" style={{height: 8, borderRadius: 4, overflow: 'hidden', background: '#e5e7eb'}}>
+                      <div style={{width: `${completeness.total > 0 ? (completeness.extracted / completeness.total) * 100 : 0}%`, height: '100%', background: '#16a34a', borderRadius: 2}}></div>
+                      <div style={{width: `${completeness.total > 0 ? (completeness.clarification / completeness.total) * 100 : 0}%`, height: '100%', background: '#ca8a04', borderRadius: 2}}></div>
+                      <div style={{width: `${completeness.total > 0 ? (completeness.missing / completeness.total) * 100 : 0}%`, height: '100%', background: '#dc2626', opacity: 0.3, borderRadius: 2}}></div>
+                    </div>
+                    <div className="flex justify-between mt-2 text-xs text-gray-500">
+                      {Object.entries(RFQ_DATA_MODEL).map(([key, section]) => {
+                        const s = completeness.bySection[key] || {};
+                        return (
+                          <span key={key} title={`${s.extracted || 0}/${s.total || 0} extracted`}>
+                            <i className={`fas ${section.icon} mr-1`}></i>{section.label.split(' ')[0]}: {s.extracted || 0}/{s.total || 0}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Data Sections */}
+                {Object.entries(RFQ_DATA_MODEL).map(([sectionKey, section]) => {
+                  const sectionData = rfqData?.[sectionKey] || {};
+                  const sComp = completeness.bySection[sectionKey] || {};
+                  const isExpanded = rfqExpandedSection === sectionKey;
+                  const sectionColor = sComp.extracted === sComp.total ? '#16a34a' : sComp.missing === sComp.total ? '#dc2626' : '#ca8a04';
+
+                  return (
+                    <div key={sectionKey} className="bg-white rounded-xl shadow-lg overflow-hidden">
+                      <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+                        onClick={() => setRfqExpandedSection(isExpanded ? null : sectionKey)}>
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{background: sectionColor + '18'}}>
+                            <i className={`fas ${section.icon} text-sm`} style={{color: sectionColor}}></i>
+                          </div>
+                          <span className="text-base font-semibold text-gray-800">{section.label}</span>
+                          <span className="text-xs px-2 py-1 rounded-full font-medium" style={{
+                            background: sComp.extracted === sComp.total ? '#dcfce7' : sComp.missing === sComp.total ? '#fef2f2' : '#fef9c3',
+                            color: sectionColor
+                          }}>
+                            {sComp.extracted}/{sComp.total} extracted
+                          </span>
+                        </div>
+                        <i className={`fas fa-chevron-${isExpanded ? 'up' : 'down'} text-gray-400`}></i>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="px-6 pb-5 border-t border-gray-100">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                            {Object.entries(section.fields).map(([fieldKey, fieldDef]) => {
+                              const fieldData = sectionData[fieldKey];
+                              const status = fieldData?.status || 'missing';
+                              const value = fieldData?.value;
+                              const note = fieldData?.note;
+
+                              const statusStyles = {
+                                extracted: { bg: '#f0fdf4', border: '#bbf7d0', icon: 'fa-check-circle', iconColor: '#16a34a', label: 'Extracted' },
+                                clarification: { bg: '#fffbeb', border: '#fde68a', icon: 'fa-question-circle', iconColor: '#ca8a04', label: 'Needs Clarification' },
+                                missing: { bg: '#fef2f2', border: '#fecaca', icon: 'fa-times-circle', iconColor: '#dc2626', label: 'Not Found' }
+                              };
+                              const st = statusStyles[status] || statusStyles.missing;
+
+                              return (
+                                <div key={fieldKey} className="rounded-lg p-3" style={{background: st.bg, border: `1px solid ${st.border}`}}>
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <div className="flex items-center space-x-2 mb-1">
+                                        <i className={`fas ${st.icon} text-xs`} style={{color: st.iconColor}}></i>
+                                        <span className="text-xs font-semibold text-gray-600">{fieldDef.label}</span>
+                                        {fieldDef.required && <span className="text-xs text-red-400">*</span>}
+                                      </div>
+                                      {value ? (
+                                        <p className="text-sm font-medium text-gray-800 ml-5">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</p>
+                                      ) : (
+                                        <p className="text-xs text-gray-400 italic ml-5">—</p>
+                                      )}
+                                      {note && (
+                                        <p className="text-xs mt-1 ml-5" style={{color: st.iconColor}}>
+                                          <i className="fas fa-info-circle mr-1"></i>{note}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background: st.border, color: st.iconColor}}>
+                                      {st.label}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // ========== END RFQ PAGE ==========
 
   if (page === 'config') {
     return <ScoreConfigPage setPage={setPage} />;

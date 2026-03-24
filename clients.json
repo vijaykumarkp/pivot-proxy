@@ -9,7 +9,8 @@
         "portability",
         "endorsements",
         "telemer",
-        "operations"
+        "operations",
+        "rfq"
       ],
       "rate_limit": 9999,
       "expiry_date": "2027-03-05",
@@ -24,7 +25,8 @@
         "portability",
         "endorsements",
         "telemer",
-        "operations"
+        "operations",
+        "rfq"
       ],
       "rate_limit": 9999,
       "expiry_date": "2027-03-05",

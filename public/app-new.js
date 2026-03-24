@@ -2787,6 +2787,26 @@ const getSumInsuredFromData = (responseData) => {
               </div>
               )}
 
+              {/* RFQ Module (Coming Soon) */}
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden border-2 border-indigo-300 relative">
+                <div className="absolute top-3 right-3">
+                  <span className="px-2 py-1 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full uppercase">Coming Soon</span>
+                </div>
+                <div className="p-6">
+                  <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center mb-4">
+                    <i className="fas fa-file-invoice text-indigo-600 text-xl"></i>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-3">PIVOT RFQ</h3>
+                  <p className="text-gray-600 mb-4">
+                    AI-powered RFQ extraction for Group Health — from quote generation to policy fulfilment
+                  </p>
+                  <div className="flex items-center text-indigo-500 font-medium">
+                    <i className="fas fa-flask mr-2"></i>
+                    <span>In Development</span>
+                  </div>
+                </div>
+              </div>
+
             </div>
           </div>
         </section>

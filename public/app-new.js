@@ -2754,8 +2754,10 @@ const getSumInsuredFromData = (responseData) => {
               )}
 
               {/* Operations Module (Coming Soon) */}
-              {hasModule('operations') ? (
-              <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer border-2 border-blue-500">
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden border-2 border-purple-300 relative">
+                <div className="absolute top-3 right-3">
+                  <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded-full uppercase">Coming Soon</span>
+                </div>
                 <div className="p-6">
                   <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
                     <i className="fas fa-cogs text-purple-600 text-xl"></i>
@@ -2764,28 +2766,12 @@ const getSumInsuredFromData = (responseData) => {
                   <p className="text-gray-600 mb-4">
                     Automated insurance operations and workflows
                   </p>
-                  <div className="flex items-center text-purple-600 font-medium">
-                    <span>Coming Soon</span>
-                    <i className="fas fa-lock ml-2"></i>
+                  <div className="flex items-center text-purple-500 font-medium">
+                    <i className="fas fa-flask mr-2"></i>
+                    <span>In Development</span>
                   </div>
                 </div>
               </div>
-              ) : (
-              <div className="bg-gray-50 rounded-xl shadow-lg overflow-hidden border-2 border-gray-200 opacity-70">
-                <div className="p-6">
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mb-4">
-                    <i className="fas fa-cogs text-gray-400 text-xl"></i>
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-500 mb-3">PIVOT Operations CoPilot</h3>
-                  <p className="text-gray-400 mb-4">
-                    Automated insurance operations and workflows
-                  </p>
-                  <a href="mailto:pivot@attributum.com" className="flex items-center text-amber-600 font-medium hover:text-amber-700">
-                    <i className="fas fa-envelope mr-2"></i> Contact Sales to Unlock
-                  </a>
-                </div>
-              </div>
-              )}
 
               {/* RFQ Module (Coming Soon) */}
               <div className="bg-white rounded-xl shadow-lg overflow-hidden border-2 border-indigo-300 relative">

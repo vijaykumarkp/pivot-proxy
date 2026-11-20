@@ -10,7 +10,8 @@
         "endorsements",
         "telemer",
         "operations",
-        "rfq"
+        "rfq",
+        "invoices"
       ],
       "rate_limit": 9999,
       "expiry_date": "2027-03-05",
@@ -26,7 +27,8 @@
         "endorsements",
         "telemer",
         "operations",
-        "rfq"
+        "rfq",
+        "invoices"
       ],
       "rate_limit": 9999,
       "expiry_date": "2027-03-05",

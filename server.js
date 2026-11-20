@@ -1,17 +1,21 @@
 import express from "express";
 import multer from "multer";
 import dotenv from "dotenv";
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import FormData from "form-data";
 import path from "path";
 import { fileURLToPath } from "url"
 import { Buffer } from 'buffer';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readFile, unlink } from 'fs';
 import session from 'express-session';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
+import os from 'os';
 import { requireAuth, validateAccessCode, generateSessionSecret, getSessionConfig } from './auth.js';
 import { logEvent, usageMiddleware, getUsageLog, getUsageSummary, exportCSV } from './usage-logger.js';
+import { extractRfqData, saveCorrection, getCorrectionStats } from './rfq-extractor.js';
+import { verifyEducationDocument, getProspectById, getAllProspects } from './education-verifier.js';
+import XLSX from 'xlsx';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,7 +35,9 @@ const ALLOWED_MIMETYPES = [
   'image/png', 'image/jpeg', 'image/jpg', 'image/tiff',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
   'application/vnd.ms-excel', // xls
-  'text/csv'
+  'text/csv',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // docx
+  'application/msword' // doc
 ];
 const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
 
@@ -98,6 +104,15 @@ app.use(session(getSessionConfig(sessionSecret)));
 // The main app files (index.html, app-new.js) are served by explicit routes after auth
 app.use('/logos', express.static(path.join(__dirname, 'public', 'logos')));
 app.use('/assets', express.static(path.join(__dirname, 'public', 'assets')));
+
+// Template files with proper download headers for Excel files
+app.use('/templates', (req, res, next) => {
+  if (req.url.endsWith('.xlsx') || req.url.endsWith('.xls')) {
+    res.setHeader('Content-Disposition', `attachment; filename="${req.url.split('/').pop()}"`);
+  }
+  next();
+}, express.static(path.join(__dirname, 'public', 'templates')));
+
 app.use('/login.html', express.static(path.join(__dirname, 'public', 'login.html')));
 
 /* =========================
@@ -207,6 +222,119 @@ app.get("/api/auth/session", (req, res) => {
     });
   } else {
     res.json({ authenticated: false });
+  }
+});
+
+// GET /api/templates/download/vendor — download vendor mapping template (no auth required)
+app.get('/api/templates/download/vendor', (req, res) => {
+  const filePath = path.join(__dirname, 'public', 'templates', 'Vendor_Mapping_Template.xlsx');
+  res.setHeader('Content-Disposition', 'attachment; filename="Vendor_Mapping_Template.xlsx"');
+  res.download(filePath, 'Vendor_Mapping_Template.xlsx', (err) => {
+    if (err && !res.headersSent) {
+      console.error('[API] template download error:', err.message);
+      res.status(404).json({ error: 'Template file not found' });
+    }
+  });
+});
+
+// GET /api/templates/download/branch — download branch mapping template (no auth required)
+app.get('/api/templates/download/branch', (req, res) => {
+  const filePath = path.join(__dirname, 'public', 'templates', 'Branch_Mapping_Template.xlsx');
+  res.setHeader('Content-Disposition', 'attachment; filename="Branch_Mapping_Template.xlsx"');
+  res.download(filePath, 'Branch_Mapping_Template.xlsx', (err) => {
+    if (err && !res.headersSent) {
+      console.error('[API] template download error:', err.message);
+      res.status(404).json({ error: 'Template file not found' });
+    }
+  });
+});
+
+/* =========================
+   Invoice Download Endpoints (must be before global auth middleware)
+========================= */
+
+// POST /api/invoices/test-download — simple public test endpoint
+app.post('/api/invoices/test-download', (req, res) => {
+  console.log('>>> TEST DOWNLOAD ENDPOINT CALLED');
+  try {
+    const ws = XLSX.utils.aoa_to_sheet([['Test', 'Data'], ['Hello', 'World']]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Test');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="test.xlsx"');
+    res.send(buf);
+  } catch (error) {
+    console.error('>>> Test download error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/invoices/download — generate Excel from extracted invoices
+app.post('/api/invoices/download', (req, res) => {
+  console.log('[INVOICE DOWNLOAD] Request received');
+  console.log('[INVOICE DOWNLOAD] Body:', JSON.stringify(req.body).substring(0, 200));
+
+  try {
+    const invoices = Array.isArray(req.body?.invoices) ? req.body.invoices : [];
+    console.log('[INVOICE DOWNLOAD] Invoices count:', invoices.length);
+
+    if (invoices.length === 0) {
+      console.log('[INVOICE DOWNLOAD] No invoices provided in body');
+      return res.status(400).json({ error: 'No invoices provided' });
+    }
+
+    const tempFile = path.join(os.tmpdir(), `invoice_${Date.now()}.xlsx`);
+    const jsonData = JSON.stringify(invoices);
+
+    console.log('[INVOICE DOWNLOAD] Temp file path:', tempFile);
+    console.log('[INVOICE DOWNLOAD] Spawning Python process...');
+
+    const python = spawn('python3', [
+      path.join(__dirname, 'invoice-to-journal.py'),
+      tempFile,
+      jsonData
+    ]);
+
+    let pythonError = '';
+
+    python.on('close', (code) => {
+      console.log('[INVOICE DOWNLOAD] Python process closed with code:', code);
+
+      if (code !== 0) {
+        console.error('[INVOICE DOWNLOAD] Python error:', pythonError);
+        return res.status(500).json({ error: 'Failed to generate Excel: ' + pythonError });
+      }
+
+      readFile(tempFile, (err, data) => {
+        if (err) {
+          console.error('[INVOICE DOWNLOAD] Failed to read temp file:', err.message);
+          return res.status(500).json({ error: 'Failed to read generated file: ' + err.message });
+        }
+
+        console.log('[INVOICE DOWNLOAD] File read successfully, size:', data.length);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename="Invoice_JournalEntry.xlsx"');
+        res.send(data);
+
+        unlink(tempFile, () => {
+          console.log('[INVOICE DOWNLOAD] Temp file deleted');
+        });
+      });
+    });
+
+    python.stderr.on('data', (data) => {
+      pythonError += data.toString();
+      console.error('[PYTHON STDERR]', data.toString());
+    });
+
+    python.stdout.on('data', (data) => {
+      console.log('[PYTHON STDOUT]', data.toString());
+    });
+
+  } catch (error) {
+    console.error('[INVOICE DOWNLOAD] Exception caught:', error.message);
+    res.status(500).json({ error: 'Server error: ' + error.message });
   }
 });
 
@@ -618,6 +746,41 @@ app.post("/ml_process", upload.single("input_file"), (req, res) => {
 
 
 /* =========================
+   RFQ Corrections (self-learning loop)
+========================= */
+app.post("/api/rfq/corrections", requireAuth, async (req, res) => {
+  try {
+    const { clientId, clientName, fieldKey, sectionKey, originalValue, correctedValue, documentHash } = req.body;
+    if (!fieldKey || !sectionKey || correctedValue === undefined) {
+      return res.status(400).json({ error: "fieldKey, sectionKey and correctedValue are required." });
+    }
+    await saveCorrection({
+      clientId: clientId || req.clientInfo?.client_id || 'unknown',
+      clientName: clientName || req.clientInfo?.client_name || 'unknown',
+      fieldKey,
+      sectionKey,
+      originalValue: originalValue ?? null,
+      correctedValue,
+      documentHash: documentHash || null
+    });
+    console.log(`[API] rfq/corrections - saved: ${sectionKey}.${fieldKey} by ${req.clientInfo?.client_name}`);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("[API] rfq/corrections error:", error.message);
+    res.status(500).json({ error: "Failed to save correction." });
+  }
+});
+
+app.get("/api/rfq/corrections/stats", requireAuth, async (req, res) => {
+  try {
+    const stats = await getCorrectionStats();
+    res.json(stats);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to retrieve correction stats." });
+  }
+});
+
+/* =========================
    PIVOT Underwriting CoPilot (TeleMER) Proxy
 ========================= */
 app.post("/api/underwriting/analyze", upload.single("input_file"), async (req, res) => {
@@ -669,87 +832,738 @@ app.post("/api/underwriting/analyze", upload.single("input_file"), async (req, r
 });
 
 /* =========================
-   RFQ Extraction (stub with sample data for UI testing)
+   RFQ Extraction (AI-powered with self-learning corrections loop)
 ========================= */
-app.post("/api/rfq/extract", upload.single("input_file"), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
+app.post("/api/rfq/extract", (req, res, next) => {
+  upload.array("input_files", 10)(req, res, (err) => {
+    if (err) {
+      console.error("[API] rfq/extract multer error:", err.message);
+      return res.status(400).json({ error: err.message || "File upload failed. Check file type and size." });
     }
-    console.log(`[API] rfq/extract - file: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB)`);
+    next();
+  });
+}, async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+    req.files.forEach(f => console.log(`[API] rfq/extract - file: ${f.originalname} (${(f.size / 1024).toFixed(1)} KB)`));
+    console.log(`[API] rfq/extract - ${req.files.length} file(s) total, client: ${req.clientInfo?.client_name}`);
 
-    // TODO: Replace with actual extraction API call
-    // For now, return sample extracted data to test UI
-    const sampleData = {
-      companyDetails: {
-        company_name: { value: 'Acme Technologies Pvt Ltd', status: 'extracted' },
-        industry: { value: 'Information Technology', status: 'extracted' },
-        company_address: { value: '2nd Floor, Tower B, Cyber City, Gurgaon 122002', status: 'extracted' },
-        gstin: { value: null, status: 'missing', note: 'GSTIN not found in document' },
-        contact_person: { value: 'Rahul Mehra (HR Head)', status: 'extracted' },
-        contact_email: { value: 'rahul.mehra@acmetech.in', status: 'extracted' },
-        contact_phone: { value: null, status: 'clarification', note: 'Multiple phone numbers found — confirm primary contact' },
-      },
-      policyRequirements: {
-        policy_type: { value: 'GMC (Group Mediclaim)', status: 'extracted' },
-        policy_start_date: { value: '01-Apr-2026', status: 'extracted' },
-        policy_end_date: { value: '31-Mar-2027', status: 'extracted' },
-        sum_insured_basis: { value: 'Graded', status: 'extracted' },
-        sum_insured_values: { value: 'Grade A: 5L, Grade B: 3L, Grade C: 2L', status: 'extracted' },
-        room_rent_limit: { value: 'Single AC Room', status: 'extracted' },
-        maternity_cover: { value: null, status: 'clarification', note: 'Document mentions maternity but limits not specified' },
-        opd_cover: { value: 'Not Required', status: 'extracted' },
-        pre_existing_cover: { value: null, status: 'clarification', note: 'PED cover mentioned but waiting period unclear' },
-        waiting_period: { value: null, status: 'missing' },
-        co_pay: { value: 'Nil', status: 'extracted' },
-        sublimits: { value: null, status: 'missing', note: 'No sub-limit details found' },
-      },
-      demographics: {
-        total_lives: { value: '342', status: 'extracted' },
-        employee_count: { value: '156', status: 'extracted' },
-        spouse_count: { value: '120', status: 'extracted' },
-        child_count: { value: '66', status: 'extracted' },
-        parent_count: { value: null, status: 'clarification', note: 'Parent cover requested but count not provided' },
-        average_age: { value: '33.5 years', status: 'extracted' },
-        age_band_distribution: { value: '18-25: 42, 26-35: 78, 36-45: 56, 46-55: 34, 55+: 12', status: 'extracted' },
-        male_female_ratio: { value: '68:32', status: 'extracted' },
-      },
-      existingPolicy: {
-        existing_insurer: { value: 'ICICI Lombard', status: 'extracted' },
-        existing_policy_number: { value: null, status: 'missing' },
-        existing_premium: { value: '18,50,000', status: 'extracted' },
-        existing_sum_insured: { value: '3L - 5L (Graded)', status: 'extracted' },
-        claims_ratio: { value: '72%', status: 'extracted' },
-        claims_count: { value: '38', status: 'extracted' },
-        large_claims: { value: null, status: 'clarification', note: 'Document references large claims but amounts not detailed' },
-        renewal_date: { value: '01-Apr-2026', status: 'extracted' },
-      },
-      brokerDetails: {
-        broker_name: { value: 'Marsh India Insurance Brokers', status: 'extracted' },
-        broker_contact: { value: null, status: 'missing' },
-        broker_license: { value: null, status: 'missing' },
-      },
-      specialConditions: {
-        exclusions: { value: null, status: 'missing' },
-        endorsements: { value: 'Day 1 PED Cover requested for Grade A', status: 'clarification', note: 'Confirm if this applies to all members or only new joiners' },
-        additional_notes: { value: 'Corporate buffer of 10% requested. Cashless facility at all network hospitals mandatory.', status: 'extracted' },
-      }
-    };
+    // Check if AI keys are configured; fall back to stub if neither is present
+    const hasOpenAI = !!process.env.OPENAI_API_KEY;
+    const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
 
-    // Simulate a brief processing delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    res.json(sampleData);
+    if (!hasOpenAI && !hasAnthropic) {
+      console.warn("[API] rfq/extract - No AI keys configured (OPENAI_API_KEY / ANTHROPIC_API_KEY). Returning sample data.");
+      return res.status(503).json({
+        error: "AI extraction is not yet configured. Please add OPENAI_API_KEY or ANTHROPIC_API_KEY to your .env file and restart the server."
+      });
+    }
+
+    // Run real AI extraction
+    const result = await extractRfqData(req.files);
+    console.log(`[API] rfq/extract - extraction complete via ${result._meta?.provider || 'unknown'}, pool=${result._meta?.correctionPoolSize}`);
+    res.json(result);
 
   } catch (error) {
-    console.error("[API] rfq/extract error:", error.message);
-    res.status(500).json({ error: "Processing error. Please try again." });
+    console.error("[API] rfq/extract error:", error.message, error.stack);
+    res.status(500).json({ error: `Processing error: ${error.message}` });
   }
+});
+
+/* =========================
+   RFQ Excel Export
+========================= */
+app.post("/api/rfq/export-excel", requireAuth, (req, res) => {
+  try {
+    const { quoteMode, sections } = req.body;
+    if (!sections) return res.status(400).json({ error: 'No data to export' });
+
+    const wb = XLSX.utils.book_new();
+
+    // Create a summary sheet with all sections
+    const summaryRows = [
+      ['PIVOT RFQ Extraction Report'],
+      ['Quote Type', quoteMode === 'fresh' ? 'Fresh Quote' : 'Renewal Quote'],
+      ['Exported At', new Date().toISOString()],
+      ['Exported By', req.clientInfo?.client_name || 'Unknown'],
+      [],
+      ['Section', 'Field', 'Value', 'Status']
+    ];
+
+    Object.entries(sections).forEach(([sectionKey, section]) => {
+      const sectionRows = [
+        ['Field Name', 'Extracted Value', 'Status']
+      ];
+      Object.entries(section.fields).forEach(([fieldKey, field]) => {
+        sectionRows.push([field.label, field.value || '', field.status || 'missing']);
+        summaryRows.push([section.label, field.label, field.value || '', field.status || 'missing']);
+      });
+
+      // Create a sheet per section (sheet name max 31 chars)
+      const sheetName = section.label.substring(0, 31);
+      const ws = XLSX.utils.aoa_to_sheet(sectionRows);
+      ws['!cols'] = [{ wch: 35 }, { wch: 40 }, { wch: 15 }];
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+
+    // Add summary sheet at the beginning
+    const summaryWs = XLSX.utils.aoa_to_sheet(summaryRows);
+    summaryWs['!cols'] = [{ wch: 30 }, { wch: 35 }, { wch: 40 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary', true);
+
+    // Move Summary to first position
+    const sheetNames = wb.SheetNames;
+    const summaryIdx = sheetNames.indexOf('Summary');
+    if (summaryIdx > 0) {
+      sheetNames.splice(summaryIdx, 1);
+      sheetNames.unshift('Summary');
+    }
+
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="RFQ_Extract_${quoteMode || 'data'}_${new Date().toISOString().slice(0,10)}.xlsx"`);
+    res.send(Buffer.from(buffer));
+
+    console.log(`[API] rfq/export-excel - exported by ${req.clientInfo?.client_name}, mode: ${quoteMode}`);
+  } catch (error) {
+    console.error("[API] rfq/export-excel error:", error.message);
+    res.status(500).json({ error: 'Excel export failed' });
+  }
+});
+
+/* =========================
+   Intermediary Management — ARM + Education Verification
+========================= */
+
+// Rate limiter for education endpoints (vision calls are expensive)
+const eduRateLimit = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 20,
+  message: { error: 'Too many verification requests. Please wait a moment.' },
+});
+
+// GET /api/intermediary/arm/prospects — list all prospects (for dropdown/search)
+app.get('/api/intermediary/arm/prospects', requireAuth, (req, res) => {
+  try {
+    const prospects = getAllProspects();
+    // Return lightweight list (no _scenario field for production-style)
+    const list = prospects.map(p => ({
+      prospect_id: p.prospect_id,
+      name: p.name,
+      claimed_qualification: p.claimed_qualification,
+      branch: p.branch,
+      agent_type: p.agent_type,
+      status: p.status,
+    }));
+    res.json({ prospects: list, total: list.length });
+  } catch (err) {
+    console.error('[API] arm/prospects error:', err.message);
+    res.status(500).json({ error: 'Failed to load ARM data' });
+  }
+});
+
+// GET /api/intermediary/arm/prospect/:id — fetch single prospect record
+app.get('/api/intermediary/arm/prospect/:id', requireAuth, (req, res) => {
+  try {
+    const prospect = getProspectById(req.params.id);
+    if (!prospect) {
+      return res.status(404).json({ error: `Prospect ID "${req.params.id}" not found in ARM system` });
+    }
+    // Strip internal _scenario annotation before sending to client
+    const { _scenario, ...record } = prospect;
+    res.json(record);
+  } catch (err) {
+    console.error('[API] arm/prospect error:', err.message);
+    res.status(500).json({ error: 'Failed to load prospect data' });
+  }
+});
+
+// POST /api/intermediary/education/verify — upload image + prospect ID → extraction + rules
+app.post('/api/intermediary/education/verify', requireAuth, eduRateLimit, (req, res, next) => {
+  upload.single('document')(req, res, async (multerErr) => {
+    if (multerErr) {
+      return res.status(400).json({ error: multerErr.message });
+    }
+
+    const { prospect_id, arm_record_override } = req.body;
+    const armOverride = arm_record_override ? JSON.parse(arm_record_override) : null;
+
+    if (!prospect_id) {
+      return res.status(400).json({ error: 'prospect_id is required' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Document image is required' });
+    }
+
+    const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
+    const hasOpenAI = !!process.env.OPENAI_API_KEY;
+
+    if (!hasAnthropic && !hasOpenAI) {
+      return res.status(503).json({
+        error: 'AI extraction not configured. Add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env and restart the server.',
+      });
+    }
+
+    console.log(`[API] education/verify - prospect: ${prospect_id}, file: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB), client: ${req.clientInfo?.client_name}`);
+
+    try {
+      const result = await verifyEducationDocument(
+        req.file.buffer,
+        req.file.mimetype,
+        prospect_id,
+        armOverride
+      );
+
+      console.log(`[API] education/verify - done: ${result.overall_status}, provider: ${result.provider}, time: ${result.processing_time_ms}ms`);
+      logEvent({
+        event_type: 'education_verify',
+        client_id: req.clientInfo?.client_id,
+        client_name: req.clientInfo?.client_name,
+        detail: `prospect=${prospect_id} status=${result.overall_status} provider=${result.provider} high=${result.flags_count?.high} medium=${result.flags_count?.medium}`,
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error('[API] education/verify error:', error.message);
+      res.status(500).json({ error: error.message || 'Verification failed. Please try again.' });
+    }
+  });
+});
+
+/* =========================
+   Configuration Management (Vendor & Branch Mapping)
+========================= */
+
+// In-memory storage for configurations per session
+const configStorage = {};
+
+function getInvoiceConfig(sessionId) {
+  if (!configStorage[sessionId]) {
+    configStorage[sessionId] = {
+      vendorMapping: {},  // { vendorName: { accountCode, tdsPercentage } }
+      branchMapping: {}   // { city: branchCode }
+    };
+  }
+  return configStorage[sessionId];
+}
+
+// POST /api/config/upload-vendor — upload vendor mapping file
+app.post('/api/config/upload-vendor', requireAuth, (req, res, next) => {
+  upload.single('vendorFile')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  });
+}, (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(sheet);
+
+    const mapping = {};
+    for (const row of data) {
+      const vendorName = row['Vendor Name']?.toString().trim();
+      const accountCode = row['Account Code']?.toString().trim();
+      const tdsPercentage = parseFloat(row['TDS Percentage']) || 0;
+
+      if (vendorName && accountCode) {
+        mapping[vendorName.toLowerCase()] = { accountCode, tdsPercentage };
+      }
+    }
+
+    const sessionConfig = getInvoiceConfig(req.sessionID);
+    sessionConfig.vendorMapping = mapping;
+
+    res.json({
+      success: true,
+      message: `Vendor mapping loaded: ${Object.keys(mapping).length} vendors`,
+      count: Object.keys(mapping).length
+    });
+  } catch (error) {
+    console.error('[API] config/upload-vendor error:', error.message);
+    res.status(400).json({ error: `Failed to parse vendor file: ${error.message}` });
+  }
+});
+
+// POST /api/config/upload-branch — upload branch mapping file
+app.post('/api/config/upload-branch', requireAuth, (req, res, next) => {
+  upload.single('branchFile')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  });
+}, (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(sheet);
+
+    const mapping = {};
+    for (const row of data) {
+      const city = row['City']?.toString().trim().toLowerCase();
+      const branchCode = row['Branch Code']?.toString().trim();
+
+      if (city && branchCode) {
+        mapping[city] = branchCode;
+      }
+    }
+
+    const sessionConfig = getInvoiceConfig(req.sessionID);
+    sessionConfig.branchMapping = mapping;
+
+    res.json({
+      success: true,
+      message: `Branch mapping loaded: ${Object.keys(mapping).length} cities`,
+      count: Object.keys(mapping).length
+    });
+  } catch (error) {
+    console.error('[API] config/upload-branch error:', error.message);
+    res.status(400).json({ error: `Failed to parse branch file: ${error.message}` });
+  }
+});
+
+// GET /api/config/status — check current configuration status
+app.get('/api/config/status', requireAuth, (req, res) => {
+  const sessionConfig = getInvoiceConfig(req.sessionID);
+  res.json({
+    vendorMappingLoaded: Object.keys(sessionConfig.vendorMapping).length > 0,
+    vendorCount: Object.keys(sessionConfig.vendorMapping).length,
+    branchMappingLoaded: Object.keys(sessionConfig.branchMapping).length > 0,
+    branchCount: Object.keys(sessionConfig.branchMapping).length
+  });
+});
+
+/* =========================
+   Invoice Processing Module
+========================= */
+
+// POST /api/invoices/extract — upload invoice PDFs/images → AI extraction
+app.post('/api/invoices/extract', requireAuth, (req, res, next) => {
+  upload.array('invoices', 10)(req, res, (err) => {
+    if (err) {
+      console.error('[API] invoices/extract multer error:', err.message);
+      return res.status(400).json({ error: err.message || 'File upload failed.' });
+    }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No invoice files uploaded' });
+    }
+    req.files.forEach(f => console.log(`[API] invoices/extract - file: ${f.originalname} (${(f.size / 1024).toFixed(1)} KB)`));
+
+    const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
+    if (!hasAnthropic) {
+      return res.status(503).json({ error: 'ANTHROPIC_API_KEY not configured. Please add it to .env and restart.' });
+    }
+
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const invoices = [];
+
+    for (const file of req.files) {
+      console.log(`[API] invoices/extract - processing: ${file.originalname}`);
+      const isPdf = file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf');
+      const mediaType = isPdf ? 'application/pdf' : (file.mimetype || 'image/jpeg');
+      const base64Data = file.buffer.toString('base64');
+
+      const contentBlock = isPdf
+        ? { type: 'document', source: { type: 'base64', media_type: mediaType, data: base64Data } }
+        : { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } };
+
+      const response = await client.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        messages: [{
+          role: 'user',
+          content: [
+            contentBlock,
+            {
+              type: 'text',
+              text: `Extract all data from this invoice and return a JSON object with these fields:
+{
+  "vendor_name": "Full vendor/company name",
+  "vendor_code": "Vendor code if available",
+  "gstin": "16-char GSTIN",
+  "pan": "PAN number",
+  "vendor_address": "Complete address",
+  "invoice_number": "Invoice reference number",
+  "invoice_date": "YYYY-MM-DD format",
+  "invoice_date_formatted": "YYYY-MM-DD 00:00:00 format for Excel",
+  "payment_terms": "Payment terms text",
+  "line_items": [
+    {
+      "description": "Item/service description",
+      "hsn_sac": "HSN or SAC code",
+      "taxable_value": "numeric amount without Rs. symbol",
+      "gst_rate": "GST percentage (0, 5, 12, 18)",
+      "qty": "quantity if available"
+    }
+  ],
+  "taxable_value_total": "numeric amount",
+  "cgst_amount": "numeric amount or null",
+  "sgst_amount": "numeric amount or null",
+  "igst_amount": "numeric amount or null",
+  "total_tax": "numeric amount",
+  "total_amount": "numeric amount"
+}
+Return ONLY the JSON, no other text. For amounts, use numbers without Rs. or commas. If a field is not found, use null.`
+            }
+          ]
+        }]
+      });
+
+      const text = response.content?.[0]?.text || '{}';
+      let parsed;
+      try {
+        // Extract JSON from potential markdown code blocks
+        const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, text];
+        parsed = JSON.parse(jsonMatch[1].trim());
+      } catch (e) {
+        parsed = { vendor_name: file.originalname, error: 'Failed to parse extraction result' };
+      }
+      parsed._source_file = file.originalname;
+      invoices.push(parsed);
+    }
+
+    console.log(`[API] invoices/extract - completed ${invoices.length} invoice(s)`);
+
+    logEvent({
+      action: 'invoice_extract',
+      client_id: req.clientInfo?.client_id,
+      client_name: req.clientInfo?.client_name,
+      detail: `files=${req.files.length} invoices=${invoices.length}`,
+    });
+
+    res.json({ invoices, count: invoices.length });
+
+  } catch (error) {
+    console.error('[API] invoices/extract error:', error.message);
+    res.status(500).json({ error: 'Invoice extraction failed. Please try again.' });
+  }
+});
+
+// Original complex version (commented out - keeping for reference)
+/*
+app.post('/api/invoices/download-complex', requireAuth, async (req, res) => {
+  try {
+    const { invoices } = req.body;
+    if (!invoices || !invoices.length) {
+      return res.status(400).json({ error: 'No invoice data provided' });
+    }
+
+    // Load configurations
+    const sessionConfig = getInvoiceConfig(req.sessionID);
+    const vendorMapping = sessionConfig.vendorMapping;
+    const branchMapping = sessionConfig.branchMapping;
+
+    // Sheet 1: Field reference (details to be captured)
+    const refSheet = [
+      ['Head', 'Details'],
+      ['Acc Period', 'Period of entry'],
+      ['Trans Date', 'Date of entry'],
+      ['Account Code', 'Respective GL code'],
+      ['Curr Code', 'INR'],
+      ['Trans Amount', 'Amount'],
+      ['Dr_Cr', 'Debit or Credit'],
+      ['Jrnal Type', 'SEXPS or HEXPS'],
+      ['Jrnal Source', 'Not applicable'],
+      ['Reference', 'Vendor code and Name'],
+      ['Description', 'Nature of expenses'],
+      ['Asset Code', 'to be blank'],
+      ['Asset Indicator', 'to be blank'],
+      ['Asset / Item Qty', 'to be blank'],
+      ['Due Date', 'to be blank'],
+      ['Branch Analysis Code', 'Branch code'],
+      ['Product  Analysis Code', 'Not applicable'],
+      ['ChannelAnalysisCode', 'Respective channel code'],
+      ['Sub-Channel  Analysis Code', 'Not applicable'],
+      ['Underwriting Year  Analysis Code', 'Not applicable'],
+      ['Employee Code  Analysis Code', 'Not applicable'],
+      ['TDS Applicability  Analysis Code', 'TD01  if TDS applicable'],
+      ['Department   Analysis Code', null],
+      ['Sequence Code  Analysis Code', 'Not applicable'],
+      ['Vendor Code  Analysis Code', 'Vendor code'],
+      ['Invoice Date', 'Invoice date'],
+      ['From Date', 'Not applicable'],
+      ['To Date', 'Not applicable'],
+      ['Addl Date 4', null],
+      ['Addl Date 5', null],
+      ['Cheque & NEFT Number', 'Vendor GST number'],
+      ['Invoice Number', 'Vendor invoice number'],
+      ['Additional Remarks', 'NEFT or Cheque'],
+      ['Àdditional Remarks 2', 'Not applicable'],
+      ['CREDENCE DESCRIPTION', 'Not applicable'],
+      ['HSN/SAC NO', 'As per invoice'],
+      ['Taxable on Amount', 'Invoice value for GST'],
+      ['Reverse Charge (Y/N)', 'Not applicable'],
+      ['Reverse charge %', 'Not applicable'],
+      ['Item Details (Sr.No)', 'Not applicable'],
+      ['Goods/Service', 'Not applicable'],
+      ['GST Tax Rate', 'GST rate'],
+      ['Orginal Invoice no for Dr/Cr Notes', 'RS GST number'],
+      ['Advance Challan No', 'Respective expenses account code']
+    ];
+
+    // Sheet 2: Upload format with journal entry lines
+    const uploadRows = [];
+    let lineId = 1;
+
+    const headers = [
+      'L id', 'Acc Period', 'Trans Date', 'Account Code', 'Description', 'Curr Code', 'Trans Amount',
+      'Dr_Cr', 'Jrnal Type', 'Jrnal Source', 'Reference', 'Description', 'Asset Code', 'Asset Indicator',
+      'Asset / Item Qty', 'Due Date', 'Branch Analysis Code', 'Product  Analysis Code', 'ChannelAnalysisCode',
+      'Sub-Channel  Analysis Code', 'Underwriting Year  Analysis Code', 'Employee Code  Analysis Code',
+      'TDS Applicability  Analysis Code', 'Department   Analysis Code', 'Sequence Code  Analysis Code',
+      'Vendor Code  Analysis Code', 'Invoice Date', 'From Date', 'To Date', 'Addl Date 4', 'Addl Date 5',
+      'Cheque & NEFT Number', 'Invoice Number', 'Additional Remarks', 'Àdditional Remarks 2',
+      'CREDENCE DESCRIPTION', 'HSN/SAC NO', 'Taxable on Amount', 'Reverse Charge (Y/N)', 'Reverse charge %',
+      'Item Details (Sr.No)', 'Goods/Service', 'GST Tax Rate', 'Orginal Invoice no for Dr/Cr Notes',
+      'Advance Challan No', 'Addl Description 15', 'Addl Description 16', 'Addl Description 17',
+      'Addl Description 18', 'Addl Description 19', 'Addl Description 20', 'Addl Description 21',
+      'Addl Description 22', 'Addl Description 23', 'Addl Description 24', 'Addl Description 25'
+    ];
+    uploadRows.push(headers);
+
+    for (const inv of invoices) {
+      // Apply Validation Rules
+
+      // Rule 2: Acc period - Extract FY year only (fixed)
+      let accPeriod = '';
+      let invDate = '';
+      if (inv.invoice_date) {
+        const dateStr = String(inv.invoice_date).trim();
+        // Extract just the YYYY-MM-DD part if there's time info
+        const dateMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (dateMatch) {
+          invDate = dateMatch[0]; // YYYY-MM-DD
+          const year = parseInt(dateMatch[1], 10);
+          const month = parseInt(dateMatch[2], 10);
+          const fy = month >= 4 ? year : year - 1; // India FY: April-March
+          accPeriod = fy.toString();
+        }
+      }
+
+      // Rule 3: Account code - From vendor mapping file
+      const vendorNameLower = (inv.vendor_name || '').toLowerCase();
+      const vendorMapping_ = vendorMapping[vendorNameLower];
+      const accountCode = vendorMapping_?.accountCode || '';
+
+      // Rule 13: Branch analysis - Match city from vendor address
+      let branchCode = '';
+      if (inv.vendor_address) {
+        const addressParts = inv.vendor_address.split(',').map(p => p.trim().toLowerCase());
+        for (const part of addressParts) {
+          if (branchMapping[part]) {
+            branchCode = branchMapping[part];
+            break;
+          }
+        }
+      }
+
+      // Rule 10: Reference - 15 char limit from invoice number
+      const reference = (inv.invoice_number || '').substring(0, 15);
+
+      // Rule 11: Description - 50 char limit
+      const description = (inv.line_items?.[0]?.description || '').substring(0, 50);
+
+      // Rule 18: Cheque & NEFT - GST number of vendor
+      const gstNumber = inv.gstin || '';
+
+      // Financial amounts
+      const taxableVal = parseFloat(inv.taxable_value_total) || 0;
+      const totalAmt = parseFloat(inv.total_amount) || 0;
+      const cgstAmt = parseFloat(inv.cgst_amount) || 0;
+      const sgstAmt = parseFloat(inv.sgst_amount) || 0;
+      const igstAmt = parseFloat(inv.igst_amount) || 0;
+
+      const blankRow = () => new Array(56).fill(null);
+      let lineCounter = 1; // Rule 1: L Id - Sequential per invoice
+
+      // 1. Expense debit line
+      const expenseLine = blankRow();
+      expenseLine[0] = lineCounter; // Rule 1: L Id
+      expenseLine[1] = accPeriod; // Rule 2: Acc period
+      expenseLine[2] = invDate; // Rule 16: Invoice date
+      expenseLine[3] = accountCode; // Rule 3: Account code from mapping
+      expenseLine[4] = null; // Rule 4: Description - Blank
+      expenseLine[5] = 'INR'; // Rule 5: Curr Code
+      expenseLine[6] = taxableVal > 0 ? taxableVal.toString() : null; // Rule 6: Trans Amount
+      expenseLine[7] = 'D'; // Rule 7: DR_CR
+      expenseLine[8] = 'SEXPS'; // Rule 8: Jrnl Type (hardcoded for now)
+      expenseLine[9] = null; // Rule 9: Jrnl source - Blank
+      expenseLine[10] = reference; // Rule 10: Reference
+      expenseLine[11] = description; // Rule 11: Description
+      // Rule 12: Asset code to Due Date - Blank (indices 12-15)
+      expenseLine[16] = branchCode || null; // Rule 13: Branch analysis
+      // Rule 14: Product analysis code - Blank (index 17)
+      // Rule 15: Columns M to P and S to X - Blank
+      expenseLine[26] = invDate; // Invoice Date column
+      expenseLine[31] = gstNumber || null; // Rule 18: Cheque & NEFT - GST number
+      expenseLine[39] = null; // Rule 20: Reverse charge - Blank
+      expenseLine[41] = gstNumber || null; // Rule 21: GST number
+      expenseLine[43] = null; // Rule 22: Advance challan No - Blank
+      uploadRows.push(expenseLine);
+      lineCounter++;
+
+      // 2. SGST input credit line (if applicable)
+      if (sgstAmt > 0) {
+        const sgstLine = blankRow();
+        sgstLine[0] = lineCounter;
+        sgstLine[1] = accPeriod;
+        sgstLine[2] = invDate;
+        sgstLine[3] = accountCode;
+        sgstLine[4] = null;
+        sgstLine[5] = 'INR';
+        sgstLine[6] = sgstAmt > 0 ? sgstAmt.toString() : null;
+        sgstLine[7] = 'D';
+        sgstLine[8] = 'SEXPS';
+        sgstLine[9] = null;
+        sgstLine[10] = reference;
+        sgstLine[11] = description;
+        sgstLine[16] = branchCode || null;
+        sgstLine[26] = invDate;
+        sgstLine[31] = gstNumber || null;
+        sgstLine[39] = null;
+        sgstLine[41] = gstNumber || null;
+        sgstLine[43] = null;
+        uploadRows.push(sgstLine);
+        lineCounter++;
+      }
+
+      // 3. CGST input credit line (if applicable)
+      if (cgstAmt > 0) {
+        const cgstLine = blankRow();
+        cgstLine[0] = lineCounter;
+        cgstLine[1] = accPeriod;
+        cgstLine[2] = invDate;
+        cgstLine[3] = accountCode;
+        cgstLine[4] = null;
+        cgstLine[5] = 'INR';
+        cgstLine[6] = cgstAmt > 0 ? cgstAmt.toString() : null;
+        cgstLine[7] = 'D';
+        cgstLine[8] = 'SEXPS';
+        cgstLine[9] = null;
+        cgstLine[10] = reference;
+        cgstLine[11] = description;
+        cgstLine[16] = branchCode || null;
+        cgstLine[26] = invDate;
+        cgstLine[31] = gstNumber || null;
+        cgstLine[39] = null;
+        cgstLine[41] = gstNumber || null;
+        cgstLine[43] = null;
+        uploadRows.push(cgstLine);
+        lineCounter++;
+      }
+
+      // 4. IGST input credit line (if applicable)
+      if (igstAmt > 0) {
+        const igstLine = blankRow();
+        igstLine[0] = lineCounter;
+        igstLine[1] = accPeriod;
+        igstLine[2] = invDate;
+        igstLine[3] = accountCode;
+        igstLine[4] = null;
+        igstLine[5] = 'INR';
+        igstLine[6] = igstAmt > 0 ? igstAmt.toString() : null;
+        igstLine[7] = 'D';
+        igstLine[8] = 'SEXPS';
+        igstLine[9] = null;
+        igstLine[10] = reference;
+        igstLine[11] = description;
+        igstLine[16] = branchCode || null;
+        igstLine[26] = invDate;
+        igstLine[31] = gstNumber || null;
+        igstLine[39] = null;
+        igstLine[41] = gstNumber || null;
+        igstLine[43] = null;
+        uploadRows.push(igstLine);
+        lineCounter++;
+      }
+
+      // 5. Vendor credit line
+      const vendorLine = blankRow();
+      vendorLine[0] = lineCounter;
+      vendorLine[1] = accPeriod;
+      vendorLine[2] = invDate;
+      vendorLine[3] = accountCode; // Account code for vendor liability
+      vendorLine[4] = null;
+      vendorLine[5] = 'INR';
+      vendorLine[6] = totalAmt > 0 ? totalAmt.toString() : null;
+      vendorLine[7] = 'C'; // Credit for vendor
+      vendorLine[8] = 'SEXPS';
+      vendorLine[9] = null;
+      vendorLine[10] = reference;
+      vendorLine[11] = description;
+      vendorLine[16] = branchCode || null;
+      vendorLine[26] = invDate;
+      vendorLine[31] = gstNumber || null;
+      vendorLine[39] = null;
+      vendorLine[41] = gstNumber || null;
+      vendorLine[43] = null;
+      uploadRows.push(vendorLine);
+
+      lineId++;
+    }
+
+    // Create workbook with both sheets
+    console.log('[API] invoices/download - creating workbook');
+    const wb = XLSX.utils.book_new();
+    console.log('[API] invoices/download - refSheet rows:', refSheet.length);
+    console.log('[API] invoices/download - uploadRows rows:', uploadRows.length);
+
+    const refWs = XLSX.utils.aoa_to_sheet(refSheet);
+    console.log('[API] invoices/download - created refWs');
+    refWs['!cols'] = [{ wch: 40 }, { wch: 40 }];
+    XLSX.utils.book_append_sheet(wb, refWs, 'details to be captured');
+    console.log('[API] invoices/download - appended refWs');
+
+    const uploadWs = XLSX.utils.aoa_to_sheet(uploadRows);
+    console.log('[API] invoices/download - created uploadWs');
+    uploadWs['!cols'] = headers.map(() => ({ wch: 12 }));
+    XLSX.utils.book_append_sheet(wb, uploadWs, 'upload format');
+    console.log('[API] invoices/download - appended uploadWs');
+
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    console.log('[API] invoices/download - wrote buffer, size:', buf.length);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="Invoice_JournalEntry_Upload.xlsx"');
+    res.send(Buffer.from(buf));
+    console.log('[API] invoices/download - sent file');
+
+  } catch (error) {
+    console.error('[API] invoices/download error:', error.message);
+    console.error('[API] invoices/download stack:', error.stack);
+    res.status(500).json({ error: 'Failed to generate Excel file', detail: error.message });
+  }
+});
+*/
+
+/* =========================
+   Error Handlers
+========================= */
+process.on('uncaughtException', (err) => {
+  console.error('[ERROR] Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[ERROR] Unhandled Rejection:', reason);
 });
 
 /* =========================
    Start server
 ========================= */
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`PIVOT proxy running on port ${PORT}`);
   console.log(`[AUTH] Authentication enabled. Login at http://localhost:${PORT}/login`);
+  console.log(`[PORTABILITY] Portability Plus module loaded`);
 });
+
+server.keepAliveTimeout = 65000;

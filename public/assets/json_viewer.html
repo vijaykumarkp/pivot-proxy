@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>PIVOT RFQ - Downloaded JSON</title>
+<style>
+* { box-sizing: border-box; margin:0; padding:0; font-family: -apple-system, "Segoe UI", Arial, sans-serif; }
+body { background:#0f172a; padding:28px; }
+.topbar { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+.topbar .dot { width:12px; height:12px; border-radius:50%; }
+.filename { color:#94a3b8; font-family: "SF Mono", Consolas, monospace; font-size:14px; }
+.badge { margin-left:auto; background:#166534; color:#dcfce7; font-size:12px; font-weight:700; padding:4px 10px; border-radius:6px; }
+pre { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:22px; color:#e2e8f0; font-family:"SF Mono", Consolas, monospace; font-size:13.5px; line-height:1.55; overflow:auto; }
+.key { color:#7dd3fc; }
+.str { color:#86efac; }
+.status-extracted { color:#4ade80; font-weight:700; }
+.status-clarification { color:#fbbf24; font-weight:700; }
+.status-missing { color:#f87171; font-weight:700; }
+</style></head>
+<body>
+<div class="topbar">
+  <div class="dot" style="background:#ef4444"></div><div class="dot" style="background:#eab308"></div><div class="dot" style="background:#22c55e"></div>
+  <span class="filename">pivot_rfq_extraction_futurerisk.json</span>
+  <span class="badge">DOWNLOADED</span>
+</div>
+<pre id="out"></pre>
+<script>
+const data = "{\n  \"Product & Quote Type\": {\n    \"Product Type\": {\n      \"value\": \"GHI\",\n      \"status\": \"extracted\"\n    },\n    \"Sub Product Type\": {\n      \"value\": \"IPD\",\n      \"status\": \"extracted\"\n    },\n    \"Quote Type\": {\n      \"value\": \"Topup\",\n      \"status\": \"extracted\"\n    },\n    \"Business Type (Fresh/Renewal)\": {\n      \"value\": \"Own Renewal\",\n      \"status\": \"clarification\"\n    },\n    \"Quote with Member Data\": {\n      \"value\": \"No\",\n      \"status\": \"clarification\"\n    }\n  },\n  \"Corporate Details\": {\n    \"Corporate Name\": {\n      \"value\": \"KNS TECHNOLOGIES PVT LTD / LAURUS INFOSYSTEMS INDIA PRIVATE LIMITED\",\n      \"status\": \"clarification\"\n    },\n    \"Enterprise Type\": {\n      \"value\": \"Non-SME\",\n      \"status\": \"clarification\"\n    },\n    \"Industry Name\": {\n      \"value\": \"\",\n      \"status\": \"missing\"\n    },\n    \"Location\": {\n      \"value\": \"Bangalore\",\n      \"status\": \"extracted\"\n    },\n    \"Zone\": {\n      \"value\": \"South\",\n      \"status\": \"extracted\"\n    }\n  },\n  \"Policy Details\": {\n    \"Total Number of Lives\": {\n      \"value\": \"167\",\n      \"status\": \"extracted\"\n    }\n  },\n  \"Existing Policy (Renewal)\": {\n    \"Insurer Type (PSU/Non-PSU)\": {\n      \"value\": \"NON PSU\",\n      \"status\": \"extracted\"\n    },\n    \"Existing Insurer Name\": {\n      \"value\": \"ICICI LOMBARD / Care Health\",\n      \"status\": \"clarification\"\n    },\n    \"Existing TPA\": {\n      \"value\": \"\",\n      \"status\": \"missing\"\n    },\n    \"Previous Policy Number\": {\n      \"value\": \"\",\n      \"status\": \"missing\"\n    },\n    \"Existing Policy Start Date\": {\n      \"value\": \"01-Nov-2023 / 01-Jun-2022\",\n      \"status\": \"clarification\"\n    },\n    \"Existing Policy End Date\": {\n      \"value\": \"31-Oct-2024 / 31-May-2023\",\n      \"status\": \"clarification\"\n    },\n    \"Existing Family Definition\": {\n      \"value\": \"Self+Spouse+4Kids / Self+Spouse+2Kids+2 Dependent Parents\",\n      \"status\": \"clarification\"\n    },\n    \"Expiring Policy Inception Premium\": {\n      \"value\": \"652992 / 803636\",\n      \"status\": \"clarification\"\n    }\n  },\n  \"Cover & Benefits (sample)\": {\n    \"Maternity Normal / C-Section Limit\": {\n      \"value\": \"50000 / 30000\",\n      \"status\": \"clarification\"\n    },\n    \"Maternity C-Section\": {\n      \"value\": \"50000\",\n      \"status\": \"extracted\"\n    },\n    \"Normal Room Rent\": {\n      \"value\": \"No Room Rent capping\",\n      \"status\": \"clarification\"\n    },\n    \"ICU Rent\": {\n      \"value\": \"1% of Sum Insured per day\",\n      \"status\": \"clarification\"\n    },\n    \"Pre & Post Natal\": {\n      \"value\": \"5000\",\n      \"status\": \"clarification\"\n    },\n    \"Cataract\": {\n      \"value\": \"\",\n      \"status\": \"missing\"\n    },\n    \"Disease Sub-Limits\": {\n      \"value\": \"Standard Limit\",\n      \"status\": \"clarification\"\n    },\n    \"Lasik\": {\n      \"value\": \"Covered if correction index is +/-6.5D\",\n      \"status\": \"clarification\"\n    },\n    \"OPD\": {\n      \"value\": \"No OPD Cover\",\n      \"status\": \"extracted\"\n    },\n    \"Ambulance\": {\n      \"value\": \"1000\",\n      \"status\": \"extracted\"\n    },\n    \"Ambulance Amount\": {\n      \"value\": \"1000\",\n      \"status\": \"extracted\"\n    }\n  }\n}";
+function colorize(s) {
+  return s
+    .replace(/"([^"]+)":/g, '<span class="key">"$1"</span>:')
+    .replace(/: "([^"]*)"/g, ': <span class="str">"$1"</span>')
+    .replace(/"extracted"/g, '<span class="status-extracted">"extracted"</span>')
+    .replace(/"clarification"/g, '<span class="status-clarification">"clarification"</span>')
+    .replace(/"missing"/g, '<span class="status-missing">"missing"</span>');
+}
+document.getElementById('out').innerHTML = colorize(data);
+</script>
+</body></html>

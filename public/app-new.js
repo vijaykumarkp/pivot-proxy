@@ -1233,11 +1233,48 @@ const App = () => {
   const [uwShowBreakdown, setUwShowBreakdown] = useState(false);
 
   // RFQ Module states
-  const [rfqFile, setRfqFile] = useState(null);
+  const [rfqFiles, setRfqFiles] = useState([]);
   const [rfqLoading, setRfqLoading] = useState(false);
   const [rfqData, setRfqData] = useState(null);
+
+  // Intermediary Management states
+  const [imTab, setImTab] = useState('onboarding');
+  const [agentType, setAgentType] = useState('posp');
+  const [agentForm, setAgentForm] = useState({});
+  const [agentDocs, setAgentDocs] = useState({});
+  const [agentVerification, setAgentVerification] = useState(null);
+  const [agentVerifying, setAgentVerifying] = useState(false);
+
+  // Education Verification states
+  const [eduProspectId, setEduProspectId] = useState('');
+  const [eduProspectRecord, setEduProspectRecord] = useState(null);
+  const [eduProspectLoading, setEduProspectLoading] = useState(false);
+  const [eduProspectError, setEduProspectError] = useState(null);
+  const [eduDocFile, setEduDocFile] = useState(null);
+  const [eduDocPreview, setEduDocPreview] = useState(null);
+  const [eduVerifying, setEduVerifying] = useState(false);
+  const [eduResult, setEduResult] = useState(null);
+  const [eduVerifyError, setEduVerifyError] = useState(null);
+  const [eduProspectList, setEduProspectList] = useState([]);
+  const [eduEditMode, setEduEditMode] = useState(false);
+  const [eduEditFields, setEduEditFields] = useState({});
+  const [eduNewCaseMode, setEduNewCaseMode] = useState(false);
+  const [eduNewCaseFields, setEduNewCaseFields] = useState({});
   const [rfqFileError, setRfqFileError] = useState(null);
   const [rfqExpandedSection, setRfqExpandedSection] = useState(null);
+  const [rfqQuoteMode, setRfqQuoteMode] = useState(null); // 'fresh' or 'renewal' — auto-detected after extraction
+
+  // Invoice Processing states
+  const [invFiles, setInvFiles] = useState([]);
+  const [invLoading, setInvLoading] = useState(false);
+  const [invData, setInvData] = useState(null);
+  const [invError, setInvError] = useState(null);
+  const [expandedInvoice, setExpandedInvoice] = useState(null);
+
+  // Invoice Configuration states
+  const [configStatus, setConfigStatus] = useState({ vendorMappingLoaded: false, vendorCount: 0, branchMappingLoaded: false, branchCount: 0 });
+  const [uploadMessage, setUploadMessage] = useState('');
+  const [uploadError, setUploadError] = useState('');
 
   // Session & permissions state (Phase 2)
   const [sessionInfo, setSessionInfo] = useState(null);
@@ -1256,6 +1293,18 @@ const App = () => {
         window.location.href = '/login';
       });
   }, []);
+
+  // Check config status when navigating to config page
+  useEffect(() => {
+    if (page === 'invoice-config') {
+      fetch('/api/config/status')
+        .then(res => res.ok && res.json())
+        .then(data => {
+          if (data) setConfigStatus(data);
+        })
+        .catch(err => console.error('Failed to check config status:', err));
+    }
+  }, [page]);
 
   // Helper: check if a module is allowed
   const hasModule = (mod) => allowedModules.includes(mod);
@@ -1313,80 +1362,348 @@ const App = () => {
     }
   };
 
+  // ========== AGENT ONBOARDING MODULE ==========
+
+  const AGENT_FORM_SECTIONS = [
+    { key: 'personal', label: 'Personal Information', icon: 'fa-user', color: 'teal', fields: [
+      { key: 'full_name',       label: 'Full Name',           type: 'text',   required: true  },
+      { key: 'dob',             label: 'Date of Birth',       type: 'date',   required: true  },
+      { key: 'gender',          label: 'Gender',              type: 'select', required: true,  options: ['Male','Female','Other'] },
+      { key: 'father_name',     label: "Father's Name",       type: 'text',   required: true  },
+      { key: 'mobile',          label: 'Mobile Number',       type: 'text',   required: true  },
+      { key: 'email',           label: 'Email Address',       type: 'email',  required: true  },
+      { key: 'pan_number',      label: 'PAN Number',          type: 'text',   required: true  },
+      { key: 'aadhaar_number',  label: 'Aadhaar Number',      type: 'text',   required: true  },
+      { key: 'address',         label: 'Residential Address', type: 'text',   required: true  },
+    ]},
+    { key: 'licence', label: 'IRDAI Licence Details', icon: 'fa-certificate', color: 'blue', fields: [
+      { key: 'licence_number',      label: 'Licence / ARN Number',      type: 'text',   required: true  },
+      { key: 'licence_category',    label: 'Licence Category',          type: 'select', required: true,  options: ['Life','General','Composite'] },
+      { key: 'licence_issue_date',  label: 'Issue Date',                type: 'date',   required: true  },
+      { key: 'licence_expiry_date', label: 'Expiry Date',               type: 'date',   required: true  },
+      { key: 'irda_exam_passed',    label: 'IRDAI Exam Passed',         type: 'select', required: true,  options: ['Yes','No'] },
+      { key: 'exam_cert_number',    label: 'Exam Certificate Number',   type: 'text',   required: false },
+      { key: 'previous_insurer',    label: 'Previous Insurer (Transfer)',type: 'text',  required: false },
+    ]},
+    { key: 'education', label: 'Education & Training', icon: 'fa-graduation-cap', color: 'indigo', fields: [
+      { key: 'qualification',       label: 'Highest Qualification',     type: 'select', required: true,  options: ['10th Pass','12th Pass','Graduate','Post Graduate','Other'] },
+      { key: 'training_completed',  label: 'IRDAI Training Completed',  type: 'select', required: true,  options: ['Yes','No'] },
+      { key: 'training_institute',  label: 'Training Institute',        type: 'text',   required: false },
+      { key: 'training_date',       label: 'Training Completion Date',  type: 'date',   required: false },
+    ]},
+    { key: 'bank', label: 'Bank Details', icon: 'fa-university', color: 'purple', fields: [
+      { key: 'bank_name',       label: 'Bank Name',       type: 'text',   required: true  },
+      { key: 'account_number',  label: 'Account Number',  type: 'text',   required: true  },
+      { key: 'ifsc_code',       label: 'IFSC Code',       type: 'text',   required: true  },
+      { key: 'account_type',    label: 'Account Type',    type: 'select', required: true,  options: ['Savings','Current'] },
+    ]},
+    { key: 'nominee', label: 'Nominee Details', icon: 'fa-users', color: 'orange', fields: [
+      { key: 'nominee_name',         label: 'Nominee Name',    type: 'text',   required: true  },
+      { key: 'nominee_relationship', label: 'Relationship',    type: 'select', required: true,  options: ['Spouse','Father','Mother','Son','Daughter','Sibling','Other'] },
+      { key: 'nominee_dob',          label: 'Nominee DOB',     type: 'date',   required: false },
+    ]},
+  ];
+
+  const AGENT_REQUIRED_DOCS = [
+    { key: 'aadhaar_front',   label: 'Aadhaar Card (Front)',            required: true  },
+    { key: 'aadhaar_back',    label: 'Aadhaar Card (Back)',             required: true  },
+    { key: 'pan_card',        label: 'PAN Card',                        required: true  },
+    { key: 'irdai_licence',   label: 'IRDAI Licence / ARN Certificate', required: true  },
+    { key: 'cancelled_cheque',label: 'Cancelled Cheque / Passbook',     required: true  },
+    { key: 'photo',           label: 'Passport Size Photo',             required: true  },
+    { key: 'exam_cert',       label: 'IRDAI Exam Certificate',          required: false },
+    { key: 'edu_cert',        label: 'Educational Certificate',         required: false },
+  ];
+
+  // Anomaly rules engine — runs on form data client-side
+  const runAgentAnomalyRules = (form, type) => {
+    const flags = [];
+    const add = (severity, rule, field, label, message) => flags.push({ severity, rule, field, label, message });
+
+    // PAN format: XXXXXNNNNX
+    if (form.pan_number && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/i.test(form.pan_number.trim()))
+      add('high', 'RULE-004', 'pan_number', 'PAN Number', `"${form.pan_number}" does not match PAN format (e.g. ABCDE1234F).`);
+
+    // Aadhaar: 12 digits
+    if (form.aadhaar_number && !/^\d{12}$/.test(form.aadhaar_number.replace(/\s|-/g, '')))
+      add('high', 'RULE-005', 'aadhaar_number', 'Aadhaar Number', 'Aadhaar must be exactly 12 digits (no spaces).');
+
+    // Age >= 18
+    if (form.dob) {
+      const age = Math.floor((Date.now() - new Date(form.dob)) / (365.25 * 24 * 60 * 60 * 1000));
+      if (age < 18) add('high', 'RULE-008', 'dob', 'Date of Birth', `Agent is ${age} years old — minimum age is 18.`);
+    }
+
+    // Licence expiry
+    if (form.licence_expiry_date) {
+      const days = Math.floor((new Date(form.licence_expiry_date) - Date.now()) / (24 * 60 * 60 * 1000));
+      if (days < 0)  add('high',   'RULE-006', 'licence_expiry_date', 'Licence Expiry', `IRDAI licence expired ${Math.abs(days)} day(s) ago.`);
+      else if (days < 30) add('medium', 'RULE-007', 'licence_expiry_date', 'Licence Expiry', `IRDAI licence expires in ${days} day(s). Renewal required.`);
+    }
+
+    // POSP restricted to General
+    if (type === 'posp' && form.licence_category && form.licence_category !== 'General')
+      add('high', 'RULE-009', 'licence_category', 'Licence Category', `POSP agents are restricted to General category. "${form.licence_category}" is not permitted.`);
+
+    // Mobile: 10 digits
+    if (form.mobile && !/^\d{10}$/.test(form.mobile.replace(/\s/g, '')))
+      add('medium', 'RULE-012', 'mobile', 'Mobile Number', 'Mobile number must be exactly 10 digits.');
+
+    // IFSC: XXXX0XXXXXX
+    if (form.ifsc_code && !/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(form.ifsc_code.trim()))
+      add('medium', 'RULE-010', 'ifsc_code', 'IFSC Code', `"${form.ifsc_code}" is not a valid IFSC code (e.g. HDFC0001234).`);
+
+    // Missing mandatory fields
+    const mandatory = { full_name:'Full Name', dob:'Date of Birth', mobile:'Mobile', email:'Email', pan_number:'PAN Number', aadhaar_number:'Aadhaar Number', licence_number:'Licence Number', licence_expiry_date:'Licence Expiry Date', bank_name:'Bank Name', account_number:'Account Number', ifsc_code:'IFSC Code' };
+    for (const [k, lbl] of Object.entries(mandatory)) {
+      if (!form[k] || String(form[k]).trim() === '')
+        add('low', 'RULE-011', k, lbl, `Mandatory field "${lbl}" is empty.`);
+    }
+    return flags;
+  };
+
+  // Simulate AI extraction result (compares against form data for POC)
+  const buildAgentExtractedStub = (form) => ({
+    full_name:      { extracted: form.full_name || null,       declared: form.full_name || null,       match: true,  source: 'PAN Card',        confidence: 0.97 },
+    dob:            { extracted: form.dob || null,             declared: form.dob || null,             match: true,  source: 'Aadhaar Card',    confidence: 0.95 },
+    pan_number:     { extracted: form.pan_number ? form.pan_number.toUpperCase() : null, declared: form.pan_number ? form.pan_number.toUpperCase() : null, match: true, source: 'PAN Card', confidence: 0.99 },
+    aadhaar_number: { extracted: form.aadhaar_number ? '••••  ••••  ' + form.aadhaar_number.replace(/\s/g,'').slice(-4) : null, declared: form.aadhaar_number ? '****'+form.aadhaar_number.replace(/\s/g,'').slice(-4) : null, match: true, source: 'Aadhaar Card', confidence: 0.99 },
+    licence_number: { extracted: form.licence_number || null,  declared: form.licence_number || null,  match: true,  source: 'IRDAI Licence',   confidence: 0.93 },
+    licence_expiry_date: { extracted: form.licence_expiry_date || null, declared: form.licence_expiry_date || null, match: true, source: 'IRDAI Licence', confidence: 0.91 },
+    bank_name:      { extracted: form.bank_name || null,       declared: form.bank_name || null,       match: true,  source: 'Cancelled Cheque',confidence: 0.88 },
+    ifsc_code:      { extracted: form.ifsc_code || null,       declared: form.ifsc_code || null,       match: true,  source: 'Cancelled Cheque',confidence: 0.94 },
+    account_number: { extracted: form.account_number ? '••••'+form.account_number.slice(-4) : null, declared: form.account_number ? '****'+form.account_number.slice(-4) : null, match: true, source: 'Cancelled Cheque', confidence: 0.92 },
+  });
+
+  const handleAgentVerify = async () => {
+    setAgentVerifying(true);
+    setAgentVerification(null);
+    await new Promise(r => setTimeout(r, 2200)); // simulate AI processing
+    const anomalies = runAgentAnomalyRules(agentForm, agentType);
+    const extracted = buildAgentExtractedStub(agentForm);
+    setAgentVerification({ extracted, anomalies, timestamp: new Date().toISOString(), docsUploaded: Object.keys(agentDocs).length });
+    setAgentVerifying(false);
+  };
+
   // ========== RFQ MODULE ==========
   // Quote-ready data model for Group Health RFQ
   const RFQ_DATA_MODEL = {
-    companyDetails: {
-      label: 'Company Details', icon: 'fa-building', fields: {
-        company_name: { label: 'Company Name', required: true },
-        industry: { label: 'Industry / Sector', required: true },
-        company_address: { label: 'Registered Address', required: false },
-        gstin: { label: 'GSTIN', required: false },
-        contact_person: { label: 'Contact Person', required: true },
-        contact_email: { label: 'Contact Email', required: true },
-        contact_phone: { label: 'Contact Phone', required: false },
+    productInfo: {
+      label: 'Product & Quote Type', icon: 'fa-tag', fields: {
+        product_type: { label: 'Product Type', required: true },
+        sub_product_type: { label: 'Sub Product Type', required: true },
+        quote_type: { label: 'Quote Type', required: true },
+        business_type: { label: 'Business Type (Fresh/Renewal)', required: true },
+        quote_with_member_data: { label: 'Quote with Member Data', required: true },
       }
     },
-    policyRequirements: {
-      label: 'Policy Requirements', icon: 'fa-file-shield', fields: {
-        policy_type: { label: 'Policy Type (GMC / GPA / GTL)', required: true },
+    corporateDetails: {
+      label: 'Corporate Details', icon: 'fa-building', fields: {
+        corporate_name: { label: 'Corporate Name', required: true },
+        enterprise_type: { label: 'Enterprise Type', required: true },
+        industry_name: { label: 'Industry Name', required: true },
+        location: { label: 'Location', required: true },
+        zone: { label: 'Zone', required: true },
+      }
+    },
+    policyDetails: {
+      label: 'Policy Details', icon: 'fa-file-contract', fields: {
+        sum_insured_type: { label: 'Sum Insured Type', required: true },
+        sum_insured_structure: { label: 'SI Structure (Single/Grade-wise)', required: false },
+        sum_insured_value: { label: 'Sum Insured Value(s)', required: true },
+        family_definition: { label: 'Family Definition', required: true },
         policy_start_date: { label: 'Policy Start Date', required: true },
         policy_end_date: { label: 'Policy End Date', required: true },
-        sum_insured_basis: { label: 'Sum Insured Basis (Flat / Graded)', required: true },
-        sum_insured_values: { label: 'Sum Insured Slabs / Values', required: true },
-        room_rent_limit: { label: 'Room Rent Limit', required: false },
-        maternity_cover: { label: 'Maternity Cover', required: false },
-        opd_cover: { label: 'OPD Cover', required: false },
-        pre_existing_cover: { label: 'Pre-Existing Disease Cover', required: false },
-        waiting_period: { label: 'Waiting Period', required: false },
-        co_pay: { label: 'Co-pay Requirement', required: false },
-        sublimits: { label: 'Sub-Limits / Capping', required: false },
       }
     },
     demographics: {
-      label: 'Employee Demographics', icon: 'fa-users', fields: {
-        total_lives: { label: 'Total Lives to be Covered', required: true },
-        employee_count: { label: 'Employee Count', required: true },
-        spouse_count: { label: 'Spouse Count', required: false },
-        child_count: { label: 'Children Count', required: false },
-        parent_count: { label: 'Parent Count', required: false },
-        average_age: { label: 'Average Age of Group', required: false },
-        age_band_distribution: { label: 'Age Band Distribution', required: true },
-        male_female_ratio: { label: 'Male : Female Ratio', required: false },
+      label: 'Lives & Demographics', icon: 'fa-users', fields: {
+        number_of_employees: { label: 'Number of Employees', required: true },
+        number_of_spouse: { label: 'Number of Spouse', required: false },
+        number_of_children: { label: 'Number of Children', required: false },
+        number_of_parents: { label: 'Number of Parents', required: false },
+        total_lives: { label: 'Total Number of Lives', required: true },
       }
     },
     existingPolicy: {
-      label: 'Existing Policy Details', icon: 'fa-history', fields: {
-        existing_insurer: { label: 'Current Insurer', required: false },
-        existing_policy_number: { label: 'Current Policy Number', required: false },
-        existing_premium: { label: 'Current Premium', required: false },
-        existing_sum_insured: { label: 'Current Sum Insured', required: false },
-        claims_ratio: { label: 'Incurred Claims Ratio (ICR)', required: true },
-        claims_count: { label: 'Number of Claims (Last Year)', required: false },
-        large_claims: { label: 'Large Claims Details', required: false },
-        renewal_date: { label: 'Renewal Due Date', required: true },
+      label: 'Existing Policy (Renewal)', icon: 'fa-history', fields: {
+        insurer_type: { label: 'Insurer Type (PSU/Non-PSU)', required: false },
+        existing_insurer_name: { label: 'Existing Insurer Name', required: false },
+        existing_tpa: { label: 'Existing TPA', required: false },
+        previous_policy_no: { label: 'Previous Policy Number', required: false },
+        existing_policy_start_date: { label: 'Existing Policy Start Date', required: false },
+        existing_policy_end_date: { label: 'Existing Policy End Date', required: false },
+        existing_family_definition: { label: 'Existing Family Definition', required: false },
+        inception_premium: { label: 'Expiring Policy Inception Premium', required: false },
+        as_on_date_premium: { label: 'Expiring Policy As-on-Date Premium', required: false },
+        terms_market_rollover: { label: 'Terms Required in Market Rollover', required: false },
+        lives_at_inception: { label: 'No. of Lives at Inception', required: false },
       }
     },
-    brokerDetails: {
-      label: 'Broker / Intermediary', icon: 'fa-handshake', fields: {
-        broker_name: { label: 'Broker / TPA Name', required: false },
-        broker_contact: { label: 'Broker Contact', required: false },
-        broker_license: { label: 'Broker License No.', required: false },
+    claimsExperience: {
+      label: 'Claims Experience', icon: 'fa-chart-bar', fields: {
+        incurred_claims_paid: { label: 'Incurred Claims - Paid', required: false },
+        incurred_claims_paid_count: { label: 'Incurred Claims - Paid Count', required: false },
+        incurred_claims_outstanding: { label: 'Incurred Claims - Outstanding', required: false },
+        incurred_claims_outstanding_count: { label: 'Incurred Claims - Outstanding Count', required: false },
+        incurred_claims_rejection: { label: 'Incurred Claims - Rejection', required: false },
+        total_incurred_claims: { label: 'Total Incurred Claims', required: false },
+        total_incurred_claims_count: { label: 'Total Incurred Claims Count', required: false },
+        claim_analysis_date: { label: 'Claim Analysis Date', required: false },
       }
     },
-    specialConditions: {
-      label: 'Special Conditions & Notes', icon: 'fa-clipboard-list', fields: {
-        exclusions: { label: 'Specific Exclusions Requested', required: false },
-        endorsements: { label: 'Special Endorsements', required: false },
-        additional_notes: { label: 'Additional Notes / Requirements', required: false },
+    coverBenefits: {
+      label: 'Cover & Benefits', icon: 'fa-shield-alt', fields: {
+        ped: { label: 'Pre-Existing Disease (PED)', required: true },
+        thirty_day_waiting: { label: '30-Day Waiting Period', required: true },
+        two_year_waiting: { label: '2-Year Waiting Period', required: true },
+        external_congenital: { label: 'External Congenital Diseases', required: false },
+        domestic_emergency: { label: 'Domestic Emergency', required: true },
+        infertility_treatment: { label: 'Infertility Treatment', required: true },
+        baby_day_one: { label: 'Baby Day One', required: true },
+        pre_post_hospitalization: { label: 'Pre & Post Hospitalization', required: true },
+        corporate_wellness: { label: 'Corporate Wellness', required: false },
+        maternity_normal: { label: 'Maternity Normal', required: true },
+        maternity_c_section: { label: 'Maternity C-Section', required: false },
+        normal_room_rent: { label: 'Normal Room Rent', required: true },
+        icu_rent: { label: 'ICU Rent', required: true },
+        pre_post_natal: { label: 'Pre & Post Natal', required: false },
+        cataract: { label: 'Cataract', required: false },
+        disease_sub_limits: { label: 'Disease Sub-Limits', required: true },
+        lasik: { label: 'Lasik', required: false },
+        opd: { label: 'OPD', required: true },
+        ambulance: { label: 'Ambulance', required: true },
+        ambulance_amount: { label: 'Ambulance Amount', required: false },
+        co_payment: { label: 'Co-Payment', required: true },
+        parental_co_pay: { label: 'Parental Co-Pay', required: false },
+        parent_si_restriction: { label: 'Parent SI Restriction', required: false },
+      }
+    },
+    bufferAndSpecial: {
+      label: 'Buffer & Special Conditions', icon: 'fa-plus-circle', fields: {
+        corporate_buffer: { label: 'Corporate Buffer', required: true },
+        corporate_buffer_type: { label: 'Corporate Buffer Type', required: true },
+        domiciliary_hospitalization: { label: 'Domiciliary Hospitalization', required: false },
+        cyber_knife_stem_cell: { label: 'Cyber Knife & Stem Cell', required: false },
+        ayush_benefit: { label: 'Ayush Benefit (IPD Basis)', required: false },
+        psychiatric_treatment: { label: 'Psychiatric Treatment (IPD Basis)', required: false },
+        modern_treatment: { label: 'Modern Treatment (IPD Basis)', required: false },
+        air_ambulance: { label: 'Air Ambulance', required: false },
+        reasonable_customary_charges: { label: 'Reasonable & Customary Charges', required: false },
+        special_conditions: { label: 'Special Conditions', required: false },
+      }
+    },
+    channelDetails: {
+      label: 'Channel & Intermediary', icon: 'fa-handshake', fields: {
+        broker: { label: 'Broker', required: true },
+        tpa: { label: 'TPA', required: true },
+        channel_name: { label: 'Channel Name', required: true },
+        channel_code: { label: 'Channel Code', required: true },
+        sm_contact: { label: 'SM Contact', required: true },
+        sm_email: { label: 'SM Email ID', required: true },
+        channel_mobile: { label: 'Channel Mobile Number', required: false },
+        alternate_email_1: { label: 'Alternate Email ID - 1', required: false },
+        alternate_sm_contact_1: { label: 'Alternate SM Contact - 1', required: false },
+        alternate_email_2: { label: 'Alternate Email ID - 2', required: false },
+        alternate_sm_contact_2: { label: 'Alternate SM Contact - 2', required: false },
+        brokerage_pct: { label: 'Brokerage %', required: false },
+        premium_rate_chart: { label: 'Premium Rate Chart', required: false },
+        installment_type: { label: 'Installment Type', required: false },
+        is_emoha: { label: 'Is Emoha', required: false },
+        quote_rewards_pct: { label: 'Quote With Rewards Percentage', required: false },
+        addition_of_member: { label: 'Addition of Member', required: false },
+        deletion_of_member: { label: 'Deletion of Member', required: false },
+      }
+    },
+    restrictions: {
+      label: 'Restrictions & Eligibility', icon: 'fa-ban', fields: {
+        are_all_employees_covered: { label: 'Are All Employees Covered', required: false },
+        is_ppn_clause_applicable: { label: 'Is PPN Clause Applicable', required: false },
       }
     }
   };
 
-  // Compute extraction completeness from RFQ data
+  // Master List of Values (LOV) from quote system — used to validate extracted values
+  const RFQ_LOV = {
+    // 3.1 Quote Type — merged: client values + PIVOT extras
+    product_type: ['GHI','GPA'],
+    sub_product_type: ['IPD','IPD+OPD','OPD','Wellness'],
+    quote_type: ['Base','Topup','Super-Topup','Parents Only','Students Only','Flex Plan','Base+Flex Plan','OPD','Parent-Top Up','Student-Top Up','Maternity','Cancer','Multiply Wellness'],
+    // 3.2 Business Type — new LOV
+    business_type: ['Fresh','Own Renewal','Market Rollover'],
+    quote_with_member_data: ['Yes','No'],
+    industry_name: ['Advertise Media','Education Institute','Financial Services / consultancy','Health Industry / Hospital','Hotel Industry','IT and ITES / BPO','Sociel Services','Telecome & Communications','Construction / Infrastructure','Manufacturing industry','Pharma Industry','Service Industry','Shipping /Logistic / Allied Industries','Travels & Transportaion'],
+    zone: ['East','West','North','South','Central'],
+    sum_insured_type: ['Floater','Non Floater'],
+    family_definition: ['Self Only','Self+Spouse','Self+Spouse+1Kids','Self+Spouse+2Kids','Self+Spouse+3Kids','Self+Spouse+4Kids','Self+Spouse+5Kids','Self+Spouse+6Kids','Self+Spouse+1Kids+2 Dependent Parents','Self+Spouse+2Kids+2 Dependent Parents','Self+Spouse+3Kids+2 Dependent Parents','Self+Spouse+4Kids+2 Dependent Parents','Self+Spouse+5Kids+2 Dependent Parents','Self+Spouse+6Kids+2 Dependent Parents','Self+Spouse+1Kids+4 Dependent Parents','Self+Spouse+2Kids+4 Dependent Parents','Self+Spouse+3Kids+4 Dependent Parents','Self+Spouse+4Kids+4 Dependent Parents','Self+Spouse+5Kids+4 Dependent Parents','Self+Spouse+6Kids+4 Dependent Parents'],
+    ped: ['Covered','Not Covered'],
+    thirty_day_waiting: ['Applicable','Not Applicable'],
+    two_year_waiting: ['Applicable','Not Applicable'],
+    external_congenital: ['Covered','Not Covered'],
+    domestic_emergency: ['Covered','Not Covered'],
+    infertility_treatment: ['Covered','Not Covered'],
+    baby_day_one: ['Covered','Not Covered'],
+    pre_post_hospitalization: ['30-60 Days','60-90 Days','90-180 Days'],
+    corporate_wellness: ['Plan A','Not Covered'],
+    // 3.19 Maternity — keep full range from both sheets
+    maternity_normal: ['Not Covered','20000','25000','30000','35000','40000','45000','50000','55000','60000','65000','70000','75000','80000','85000','90000','95000','100000'],
+    maternity_c_section: ['Not Covered','20000','25000','30000','35000','40000','45000','50000','55000','60000','65000','70000','75000','80000','85000','90000','95000','100000'],
+    // 3.3 Normal Room Rent — added Single standard ac room, 3%, 4% of SI
+    normal_room_rent: ['No Room Rent capping','Deluxe room','Single Private Room','Single standard ac room','Shared room','General/Economy ward','1% of Sum Insured per day','2% of Sum Insured per day','3% of Sum Insured per day','4% of Sum Insured per day','500','1000','1500','2000','2500','3000','3500','4000','4500','5000','5500','6000','6500','7000','7500','8000','8500'],
+    // 3.4 ICU Rent — added 3%, 4% of SI, 7500, 9000
+    icu_rent: ['No Room Rent capping','Deluxe room','Single Private Room','Single standard ac room','Shared room','General/Economy ward','1% of Sum Insured per day','2% of Sum Insured per day','3% of Sum Insured per day','4% of Sum Insured per day','500','1000','1500','2000','2500','3000','3500','4000','4500','5000','5500','6000','6500','7000','7500','8000','8500','9000'],
+    pre_post_natal: ['Not Covered','2500','5000','10000'],
+    cataract: ['Not Covered','20000','30000','40000','50000','60000','70000','80000','90000','100000'],
+    // 3.12 Disease Sub Limits — removed contaminated Lasik values
+    disease_sub_limits: ['Standard Limit','Higher Limit','No Limit','Not Applicable'],
+    // 3.11 Lasik — aligned with client: Not Covered + correction index values
+    lasik: ['Not Covered','Covered if correction index is +/-5D','Covered if correction index is +/-6.5D','Covered if correction index is +/-7.5D'],
+    // 3.9 OPD — added full range 0-10000
+    opd: ['No OPD Cover','0','1000','2000','3000','4000','5000','6000','7000','8000','9000','10000'],
+    // 3.8 Ambulance — added 0, 3000
+    ambulance: ['0','1000','1500','2000','2500','3000','5000','Covered upto Actual Expenses'],
+    ambulance_amount: ['1000','1500','2000','2500','3000','5000'],
+    // 3.5 Co-Payment — changed to percentage format
+    co_payment: ['No Co-pay','10%','15%','20%','25%','30%','40%'],
+    // 3.6 Parental Co-Pay — added No Copay, changed to percentage format
+    parental_co_pay: ['No Copay','10%','15%','20%','25%','30%'],
+    // 3.7 Parent SI Restriction — added Not Covered, kept Family SI naming
+    parent_si_restriction: ['Not Covered','25% of Family SI','50% of Family SI','75% of Family SI','Upto FSI'],
+    // 3.10 Corporate Buffer — added 0
+    corporate_buffer: ['NO CB','0','200000','300000','500000','1000000'],
+    corporate_buffer_type: ['CI Restriction','Open to All'],
+    // 3.13 Modern Treatment — new LOV
+    modern_treatment: ['Not Covered','Upto 25% of FSI','Upto 50% of FSI','Upto FSI'],
+    // 3.14 Domiciliary Hospitalization — new LOV
+    domiciliary_hospitalization: ['Covered','Not Covered'],
+    // 3.15 Cyber Knife & Stem Cell — new LOV
+    cyber_knife_stem_cell: ['Covered','Not Covered'],
+    // 3.16 Air Ambulance — new LOV
+    air_ambulance: ['Covered','Not Covered'],
+    // 3.17 Reasonable & Customary Charges — new LOV
+    reasonable_customary_charges: ['Applicable','Not Applicable'],
+    ayush_benefit: ['Not Covered','Upto 25% of FSI','Upto 50% of FSI','Upto FSI'],
+    psychiatric_treatment: ['Covered upto 50K','Not Covered','Covered upto 1 Lac','Covered upto FSI'],
+    // 3.20 Premium Rate Chart — new LOV
+    premium_rate_chart: ['Per Life-Age Band wise','Per Family-Age Band wise','Flat Per Life','Flat per Family'],
+    // 3.21 Installment Type — new LOV
+    installment_type: ['Monthly','Quarterly','Half Yearly','Annual'],
+    addition_of_member: ['Pro Rata','Annual Premium'],
+    deletion_of_member: ['Pro Rata','NIL refund'],
+    // 3.23 Are All Employees Covered — new LOV
+    are_all_employees_covered: ['Yes','No'],
+    // 3.24 Is PPN Clause Applicable — new LOV
+    is_ppn_clause_applicable: ['Yes','No'],
+    insurer_type: ['PSU','NON PSU'],
+    enterprise_type: ['SME','Non-SME'],
+    terms_market_rollover: ['Expiring Terms','Proposed Terms'],
+    is_emoha: ['Applicable','Not Applicable'],
+  };
+
+  // Compute extraction completeness with LOV validation
   const computeRfqCompleteness = (extractedData) => {
-    if (!extractedData) return { total: 0, extracted: 0, clarification: 0, missing: 0, bySection: {} };
-    let total = 0, extracted = 0, clarification = 0, missing = 0;
+    if (!extractedData) return { total: 0, extracted: 0, clarification: 0, missing: 0, bySection: {}, lovMismatches: 0 };
+    let total = 0, extracted = 0, clarification = 0, missing = 0, lovMismatches = 0;
     const bySection = {};
     Object.entries(RFQ_DATA_MODEL).forEach(([sectionKey, section]) => {
       let sTotal = 0, sExtracted = 0, sClarification = 0, sMissing = 0;
@@ -1394,46 +1711,153 @@ const App = () => {
         sTotal++;
         total++;
         const val = extractedData?.[sectionKey]?.[fieldKey];
-        if (val && val.status === 'extracted') { sExtracted++; extracted++; }
+        if (val && val.status === 'extracted') {
+          // LOV validation: if this field has a master list, check the value (skip user-edited fields)
+          const allowedValues = RFQ_LOV[fieldKey];
+          if (allowedValues && val.value && !val.userEdited) {
+            const valStr = String(val.value).trim();
+            const isValid = allowedValues.some(av => av.toLowerCase() === valStr.toLowerCase());
+            if (!isValid) {
+              // Downgrade to clarification — value doesn't match master list
+              val.status = 'clarification';
+              val.note = (val.note ? val.note + ' | ' : '') + 'Value "' + valStr + '" does not match master list of allowed values';
+              val.lovMismatch = true;
+              sClarification++; clarification++; lovMismatches++;
+            } else {
+              sExtracted++; extracted++;
+            }
+          } else {
+            sExtracted++; extracted++;
+          }
+        }
         else if (val && val.status === 'clarification') { sClarification++; clarification++; }
         else { sMissing++; missing++; }
       });
       bySection[sectionKey] = { total: sTotal, extracted: sExtracted, clarification: sClarification, missing: sMissing };
     });
-    return { total, extracted, clarification, missing, bySection, pct: total > 0 ? Math.round((extracted / total) * 100) : 0 };
+    return { total, extracted, clarification, missing, bySection, lovMismatches, pct: total > 0 ? Math.round((extracted / total) * 100) : 0 };
+  };
+
+  // Update a single RFQ field value — marks it as extracted and clears LOV flags.
+  // Also fires an async correction POST to the server for the self-learning loop.
+  const updateRfqField = (sectionKey, fieldKey, newValue) => {
+    // Capture original value before the state update (rfqData is in scope)
+    const originalValue = rfqData?.[sectionKey]?.[fieldKey]?.value ?? null;
+    const trimmed = (newValue || '').trim();
+
+    setRfqData(prev => {
+      if (!prev) return prev;
+      const updated = JSON.parse(JSON.stringify(prev)); // deep clone
+      if (!updated[sectionKey]) updated[sectionKey] = {};
+      if (trimmed) {
+        updated[sectionKey][fieldKey] = {
+          value: trimmed,
+          status: 'extracted',
+          note: null,
+          lovMismatch: false,
+          userEdited: true
+        };
+      } else {
+        // If user clears the value, mark as missing
+        updated[sectionKey][fieldKey] = {
+          value: null,
+          status: 'missing',
+          note: null,
+          lovMismatch: false,
+          userEdited: true
+        };
+      }
+
+      // Auto-calculate: Total Lives = employees + spouse + children + parents
+      const demoFields = ['number_of_employees', 'number_of_spouse', 'number_of_children', 'number_of_parents'];
+      if (sectionKey === 'demographics' && demoFields.includes(fieldKey)) {
+        const getNum = (fk) => {
+          const v = fk === fieldKey ? trimmed : updated.demographics?.[fk]?.value;
+          return parseInt(v, 10) || 0;
+        };
+        const total = demoFields.reduce((sum, fk) => sum + getNum(fk), 0);
+        updated.demographics.total_lives = {
+          value: total > 0 ? String(total) : null,
+          status: total > 0 ? 'extracted' : 'missing',
+          note: total > 0 ? 'Auto-calculated' : null,
+          lovMismatch: false,
+          userEdited: false
+        };
+      }
+
+      // Auto-calculate: Policy End Date = Start Date + 1 year
+      if (sectionKey === 'policyDetails' && fieldKey === 'policy_start_date' && trimmed) {
+        try {
+          const startDate = new Date(trimmed);
+          if (!isNaN(startDate.getTime())) {
+            const endDate = new Date(startDate);
+            endDate.setFullYear(endDate.getFullYear() + 1);
+            const endStr = endDate.toISOString().split('T')[0]; // YYYY-MM-DD
+            if (!updated.policyDetails) updated.policyDetails = {};
+            updated.policyDetails.policy_end_date = {
+              value: endStr,
+              status: 'extracted',
+              note: 'Auto-calculated (start date + 1 year)',
+              lovMismatch: false,
+              userEdited: false
+            };
+          }
+        } catch (e) { /* ignore invalid dates */ }
+      }
+
+      return updated;
+    });
+
+    // Fire-and-forget: POST correction to server for self-learning — only if value changed
+    if (trimmed !== (originalValue || '')) {
+      fetch('/api/rfq/corrections', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sectionKey, fieldKey, originalValue, correctedValue: trimmed || null })
+      }).catch(err => console.warn('[RFQ] Failed to save correction:', err.message));
+    }
   };
 
   const handleRfqFileChange = (e) => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile) {
-      const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-      if (!allowedTypes.includes(selectedFile.type)) {
-        setRfqFileError('Please upload a PDF, JPG, PNG, Excel, or Word file');
-        setRfqFile(null);
-        return;
+    const newFiles = Array.from(e.target.files || []);
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    const errors = [];
+    const valid = [];
+    newFiles.forEach(f => {
+      if (!allowedTypes.includes(f.type)) {
+        errors.push(f.name + ': unsupported file type');
+      } else if (f.size > 20 * 1024 * 1024) {
+        errors.push(f.name + ': exceeds 20MB limit');
+      } else {
+        valid.push(f);
       }
-      if (selectedFile.size > 20 * 1024 * 1024) {
-        setRfqFileError('File size must be less than 20MB');
-        setRfqFile(null);
-        return;
-      }
-      setRfqFileError(null);
-      setRfqFile(selectedFile);
-    }
+    });
+    if (errors.length) setRfqFileError(errors.join('; '));
+    else setRfqFileError(null);
+    if (valid.length) setRfqFiles(prev => [...prev, ...valid]);
+    // Reset input so same file can be re-selected
+    e.target.value = '';
+  };
+
+  const removeRfqFile = (idx) => {
+    setRfqFiles(prev => prev.filter((_, i) => i !== idx));
   };
 
   const handleRfqUpload = async (e) => {
     e.preventDefault();
-    if (!rfqFile) return;
+    if (rfqFiles.length === 0) return;
     setRfqFileError(null);
+    setRfqQuoteMode(null);
     setRfqLoading(true);
     try {
       const formData = new FormData();
-      formData.append('input_file', rfqFile);
+      rfqFiles.forEach(f => formData.append('input_files', f));
       const response = await fetch('/api/rfq/extract', {
         method: 'POST',
+        credentials: 'include',
         body: formData
       });
       if (!response.ok) {
@@ -1441,12 +1865,132 @@ const App = () => {
         throw new Error(errData.error || 'Extraction failed (HTTP ' + response.status + ')');
       }
       const data = await response.json();
+
+      // Remap enterprise_type: AI returns it in productInfo, UI expects it in corporateDetails
+      if (data?.productInfo?.enterprise_type && !data?.corporateDetails?.enterprise_type) {
+        if (!data.corporateDetails) data.corporateDetails = {};
+        data.corporateDetails.enterprise_type = data.productInfo.enterprise_type;
+        delete data.productInfo.enterprise_type;
+      }
+
+      // Auto-calculate Total Lives after extraction
+      if (data?.demographics) {
+        const demoFields = ['number_of_employees', 'number_of_spouse', 'number_of_children', 'number_of_parents'];
+        const total = demoFields.reduce((sum, fk) => sum + (parseInt(data.demographics?.[fk]?.value, 10) || 0), 0);
+        if (total > 0) {
+          data.demographics.total_lives = {
+            value: String(total),
+            status: 'extracted',
+            note: 'Auto-calculated',
+            lovMismatch: false,
+            userEdited: false
+          };
+        }
+      }
+
+      // Auto-calculate Policy End Date after extraction
+      if (data?.policyDetails?.policy_start_date?.value) {
+        try {
+          const startDate = new Date(data.policyDetails.policy_start_date.value);
+          if (!isNaN(startDate.getTime())) {
+            const endDate = new Date(startDate);
+            endDate.setFullYear(endDate.getFullYear() + 1);
+            data.policyDetails.policy_end_date = {
+              value: endDate.toISOString().split('T')[0],
+              status: 'extracted',
+              note: 'Auto-calculated (start date + 1 year)',
+              lovMismatch: false,
+              userEdited: false
+            };
+          }
+        } catch (e) { /* ignore */ }
+      }
+
       setRfqData(data);
+
+      // Auto-detect Fresh vs Renewal from extracted business_type
+      const bizType = (data?.productInfo?.business_type?.value || '').toLowerCase();
+      if (bizType.includes('renewal') || bizType.includes('rollover')) {
+        setRfqQuoteMode('renewal');
+      } else {
+        // Also check if existing policy data is present (fallback detection)
+        const hasExistingPolicy = data?.existingPolicy && Object.values(data.existingPolicy).some(
+          f => f && f.value && f.status === 'extracted'
+        );
+        const hasClaims = data?.claimsExperience && Object.values(data.claimsExperience).some(
+          f => f && f.value && f.status === 'extracted'
+        );
+        setRfqQuoteMode((hasExistingPolicy || hasClaims) ? 'renewal' : 'fresh');
+      }
     } catch (err) {
       console.error('RFQ Error:', err);
       setRfqFileError(err.message);
     } finally {
       setRfqLoading(false);
+    }
+  };
+
+  // Download RFQ data as JSON
+  const downloadRfqJson = () => {
+    if (!rfqData) return;
+    const exportData = {};
+    Object.entries(RFQ_DATA_MODEL).forEach(([sectionKey, section]) => {
+      // Skip hidden sections in fresh mode
+      if (rfqQuoteMode === 'fresh' && ['existingPolicy', 'claimsExperience', 'demographics'].includes(sectionKey)) return;
+      exportData[section.label] = {};
+      Object.entries(section.fields).forEach(([fieldKey, fieldDef]) => {
+        const val = rfqData?.[sectionKey]?.[fieldKey];
+        exportData[section.label][fieldDef.label] = {
+          value: val?.value || '',
+          status: val?.status || 'missing'
+        };
+      });
+    });
+    exportData._meta = {
+      quoteMode: rfqQuoteMode,
+      exportedAt: new Date().toISOString(),
+      source: rfqData?._meta?.files || []
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `RFQ_Extract_${rfqQuoteMode || 'data'}_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Download RFQ data as Excel via server endpoint
+  const downloadRfqExcel = async () => {
+    if (!rfqData) return;
+    const exportPayload = { quoteMode: rfqQuoteMode, sections: {} };
+    Object.entries(RFQ_DATA_MODEL).forEach(([sectionKey, section]) => {
+      if (rfqQuoteMode === 'fresh' && ['existingPolicy', 'claimsExperience', 'demographics'].includes(sectionKey)) return;
+      const fields = {};
+      Object.entries(section.fields).forEach(([fieldKey, fieldDef]) => {
+        const val = rfqData?.[sectionKey]?.[fieldKey];
+        fields[fieldKey] = { label: fieldDef.label, value: val?.value || '', status: val?.status || 'missing' };
+      });
+      exportPayload.sections[sectionKey] = { label: section.label, fields };
+    });
+    try {
+      const response = await fetch('/api/rfq/export-excel', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(exportPayload)
+      });
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `RFQ_Extract_${rfqQuoteMode || 'data'}_${new Date().toISOString().slice(0,10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Excel export error:', err);
+      alert('Failed to export Excel. Please try again.');
     }
   };
   // ========== END RFQ MODULE ==========
@@ -2898,6 +3442,26 @@ const getSumInsuredFromData = (responseData) => {
               </div>
               )}
 
+              {/* RFQ Module */}
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer border-2 border-indigo-400 relative"
+                onClick={() => setPage('rfq')}>
+                <div className="absolute top-3 right-3">
+                  <span className="px-2 py-1 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full uppercase">Beta</span>
+                </div>
+                <div className="p-6">
+                  <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center mb-4">
+                    <i className="fas fa-file-invoice text-indigo-600 text-xl"></i>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-3">PIVOT RFQ</h3>
+                  <p className="text-gray-600 mb-4">
+                    AI-powered RFQ extraction for Group Health — from quote generation to policy fulfilment
+                  </p>
+                  <div className="flex items-center text-indigo-600 font-medium">
+                    <span>Launch RFQ Extraction →</span>
+                  </div>
+                </div>
+              </div>
+
               {/* Operations Module (Coming Soon) */}
               <div className="bg-white rounded-xl shadow-lg overflow-hidden border-2 border-purple-300 relative">
                 <div className="absolute top-3 right-3">
@@ -2918,22 +3482,79 @@ const getSumInsuredFromData = (responseData) => {
                 </div>
               </div>
 
-              {/* RFQ Module */}
-              <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer border-2 border-indigo-400 relative"
-                onClick={() => setPage('rfq')}>
+              {/* Intermediary Management */}
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer border-2 border-teal-400 relative"
+                onClick={() => setPage('intermediary')}>
                 <div className="absolute top-3 right-3">
-                  <span className="px-2 py-1 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full uppercase">Beta</span>
+                  <span className="px-2 py-1 bg-teal-100 text-teal-700 text-xs font-bold rounded-full uppercase">Beta</span>
                 </div>
                 <div className="p-6">
-                  <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center mb-4">
-                    <i className="fas fa-file-invoice text-indigo-600 text-xl"></i>
+                  <div className="w-12 h-12 bg-teal-100 rounded-lg flex items-center justify-center mb-4">
+                    <i className="fas fa-handshake text-teal-600 text-xl"></i>
                   </div>
-                  <h3 className="text-xl font-semibold text-gray-800 mb-3">PIVOT RFQ</h3>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-3">PIVOT Intermediary Management</h3>
                   <p className="text-gray-600 mb-4">
-                    AI-powered RFQ extraction for Group Health — from quote generation to policy fulfilment
+                    End-to-end broker and channel partner lifecycle management
                   </p>
-                  <div className="flex items-center text-indigo-600 font-medium">
-                    <span>Launch RFQ Extraction →</span>
+                  <div className="flex items-center text-teal-600 font-medium">
+                    <span>Launch Intermediary Module →</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Invoice Processing Module */}
+              {hasModule('invoices') ? (
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer border-2 border-amber-500 relative"
+                onClick={() => setPage('invoices')}>
+                <div className="absolute top-3 right-3">
+                  <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full uppercase">Beta</span>
+                </div>
+                <div className="p-6">
+                  <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center mb-4">
+                    <i className="fas fa-file-invoice-dollar text-amber-600 text-xl"></i>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-3">PIVOT Invoices</h3>
+                  <p className="text-gray-600 mb-4">
+                    AI-powered invoice data extraction with GST breakup, vendor details & journal-entry-ready output
+                  </p>
+                  <div className="flex items-center text-amber-600 font-medium">
+                    <span>Launch Invoice Processing →</span>
+                  </div>
+                </div>
+              </div>
+              ) : (
+              <div className="bg-gray-50 rounded-xl shadow-lg overflow-hidden border-2 border-gray-200 opacity-70">
+                <div className="p-6">
+                  <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mb-4">
+                    <i className="fas fa-file-invoice-dollar text-gray-400 text-xl"></i>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-500 mb-3">PIVOT Invoices</h3>
+                  <p className="text-gray-400 mb-4">
+                    AI-powered invoice data extraction with GST breakup, vendor details & journal-entry-ready output
+                  </p>
+                  <a href="mailto:pivot@attributum.com" className="flex items-center text-amber-600 font-medium hover:text-amber-700">
+                    <i className="fas fa-envelope mr-2"></i> Contact Sales to Unlock
+                  </a>
+                </div>
+              </div>
+              )}
+
+              {/* Group Insurance Management Platform */}
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer border-2 border-green-500 relative"
+                onClick={() => window.open('https://pivot-gimc.codetentaclestechnologies.in/login', '_blank')}>
+                <div className="absolute top-3 right-3">
+                  <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full uppercase">New</span>
+                </div>
+                <div className="p-6">
+                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4">
+                    <i className="fas fa-users text-green-600 text-xl"></i>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-3">PIVOT Group Insurance Management</h3>
+                  <p className="text-gray-600 mb-4">
+                    Automated proposal to binding for Group Life policies — streamline underwriting and policy issuance for US markets
+                  </p>
+                  <div className="flex items-center text-green-600 font-medium">
+                    <span>Launch GIMP →</span>
                   </div>
                 </div>
               </div>
@@ -3350,70 +3971,115 @@ const getSumInsuredFromData = (responseData) => {
 
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
+        {/* Header - matching Portability module */}
         <header className="bg-white shadow-sm border-b">
           <div className="container mx-auto px-4 py-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-6 w-56">
-                <img src="/assets/images/attributum-logo.png" alt="Attributum" className="h-12 object-contain"
-                  onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }}
-                />
-                <div className="w-40 h-12 bg-indigo-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
-                  <span className="text-white font-bold text-sm">Attributum</span>
+                {/* Attributum Logo */}
+                <div className="flex items-center space-x-2">
+                  <img
+                    src="/logos/attributum-logo.png"
+                    alt="Attributum Logo"
+                    className="w-50 h-20 rounded-lg object-contain"
+                    style={{maxHeight: '56px', maxWidth: '180px', width: 'auto', height: 'auto', objectFit: 'contain'}}
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      e.target.nextElementSibling.style.display = 'flex';
+                    }}
+                  />
+                  <div className="w-50 h-20 bg-blue-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                    <span className="text-white font-bold text-xl">A</span>
+                  </div>
                 </div>
               </div>
-              <div className="text-center flex-1">
-                <h1 className="text-2xl font-bold text-gray-800">PIVOT RFQ</h1>
+
+              <div className="flex-1 text-center">
+                <h1 className="text-3xl font-bold text-gray-800">PIVOT RFQ</h1>
                 <p className="text-sm text-gray-500">AI-powered Group Health RFQ Extraction</p>
               </div>
-              <div className="flex items-center space-x-6 w-56 justify-end">
-                <img src="/assets/images/pivot-logo.png" alt="PIVOT" className="h-16 object-contain"
-                  onError={(e) => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }}
-                />
-                <div className="w-40 h-16 bg-indigo-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
-                  <span className="text-white font-bold text-xl">PIVOT</span>
+
+              <div className="flex items-center justify-end space-x-6 w-56">
+                {/* PIVOT Logo */}
+                <div className="flex items-center space-x-2">
+                  <img
+                    src="/logos/pivot-logo.png"
+                    alt="PIVOT Logo"
+                    className="w-40 h-20 rounded-lg object-contain"
+                    style={{maxHeight: '56px', maxWidth: '160px', width: 'auto', height: 'auto', objectFit: 'contain'}}
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      e.target.nextElementSibling.style.display = 'flex';
+                    }}
+                  />
+                  <div className="w-40 h-20 bg-purple-600 rounded-lg flex items-center justify-center" style={{display: 'none'}}>
+                    <span className="text-white font-bold text-xl">P</span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </header>
 
-        <div className="container mx-auto px-4 py-6">
+        <div className="container mx-auto px-4 py-8">
           <div className="max-w-7xl mx-auto">
-            {/* Sub-header with navigation */}
-            <div className="flex justify-between items-center mb-6">
-              <p className="text-xs text-gray-500">Upload Group Health RFQ documents for AI-powered data extraction</p>
-              <button onClick={() => { setPage('home'); setRfqData(null); setRfqFile(null); }}
-                className="px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 text-sm">
-                ← Back to Home
-              </button>
+            {/* Sub-header with navigation - matching Portability */}
+            <div className="flex justify-between items-center mb-8">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-800">PIVOT RFQ Module</h1>
+                <p className="text-xs text-gray-500 mt-1">AI-powered Group Health RFQ data extraction</p>
+              </div>
+              <div className="space-x-4">
+                <button onClick={() => { setPage('home'); setRfqData(null); setRfqFiles([]); }}
+                  className="px-4 py-2 border border-gray-300 text-gray-600 rounded hover:bg-gray-50">
+                  ← Back to Home
+                </button>
+              </div>
             </div>
 
             {/* Upload Form - compact inline bar */}
             <div className="bg-white rounded-xl shadow-lg p-4 mb-6">
               <form onSubmit={handleRfqUpload} className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center space-x-2">
-                  <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
-                    <i className="fas fa-file-invoice text-indigo-600"></i>
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                    <i className="fas fa-file-invoice text-blue-600"></i>
                   </div>
                   <span className="text-sm font-semibold text-gray-700 hidden md:inline">Extract RFQ</span>
                 </div>
                 <div className="flex-1" style={{minWidth: 200}}>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 text-center hover:border-indigo-400 transition-colors cursor-pointer"
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 text-center hover:border-blue-400 transition-colors cursor-pointer"
                     onClick={() => document.getElementById('rfq-file-input')?.click()}>
                     <p className="text-sm text-gray-600">
-                      {rfqFile ? (<span><i className="fas fa-file-pdf mr-1 text-red-500"></i>{rfqFile.name}</span>) :
-                        (<span><i className="fas fa-cloud-upload-alt mr-1 text-gray-400"></i>Click to select RFQ document (PDF, Excel, Word, JPG)</span>)}
+                      {rfqFiles.length > 0 ? (
+                        <span><i className="fas fa-file-alt mr-1 text-blue-500"></i>{rfqFiles.length} document{rfqFiles.length > 1 ? 's' : ''} selected — click to add more</span>
+                      ) : (
+                        <span><i className="fas fa-cloud-upload-alt mr-1 text-gray-400"></i>Click to select RFQ documents (PDF, Excel, Word, JPG)</span>
+                      )}
                     </p>
                   </div>
-                  <input id="rfq-file-input" type="file" onChange={handleRfqFileChange} className="hidden" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.docx" />
+                  <input id="rfq-file-input" type="file" multiple onChange={handleRfqFileChange} className="hidden" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.docx" />
                 </div>
-                <button type="submit" disabled={!rfqFile || rfqLoading}
-                  className="bg-indigo-600 text-white px-5 py-2 rounded-lg font-semibold hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm">
+                <button type="submit" disabled={rfqFiles.length === 0 || rfqLoading}
+                  className="bg-blue-600 text-white px-5 py-2 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm">
                   {rfqLoading ? (<span><i className="fas fa-spinner fa-spin mr-1"></i>Extracting...</span>) :
                     (<span><i className="fas fa-search mr-1"></i>Extract</span>)}
                 </button>
               </form>
+              {/* Selected file pills */}
+              {rfqFiles.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {rfqFiles.map((f, idx) => (
+                    <div key={idx} className="flex items-center bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 text-sm">
+                      <i className={`fas ${f.type === 'application/pdf' ? 'fa-file-pdf text-red-500' : f.type.includes('image') ? 'fa-file-image text-green-500' : f.type.includes('sheet') || f.type.includes('excel') ? 'fa-file-excel text-green-600' : 'fa-file-word text-blue-600'} mr-2`}></i>
+                      <span className="text-gray-700" style={{maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{f.name}</span>
+                      <span className="text-xs text-gray-400 ml-2">({(f.size / 1024).toFixed(0)} KB)</span>
+                      <button type="button" onClick={() => removeRfqFile(idx)} className="ml-2 text-gray-400 hover:text-red-500 transition-colors">
+                        <i className="fas fa-times text-xs"></i>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               {rfqFileError && (
                 <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded-lg">
                   <p className="text-sm text-red-600"><i className="fas fa-exclamation-circle mr-1"></i> {rfqFileError}</p>
@@ -3433,7 +4099,7 @@ const getSumInsuredFromData = (responseData) => {
             {/* Loading state */}
             {rfqLoading && (
               <div className="text-center py-16">
-                <i className="fas fa-spinner fa-spin text-4xl text-indigo-400 mb-4"></i>
+                <i className="fas fa-spinner fa-spin text-4xl text-blue-400 mb-4"></i>
                 <p className="text-gray-500">Extracting data from your RFQ document...</p>
                 <p className="text-gray-400 text-xs mt-2">This may take a moment for large documents</p>
               </div>
@@ -3479,6 +4145,11 @@ const getSumInsuredFromData = (responseData) => {
                         <p className="text-xs text-gray-500">Clarification</p>
                         <p className="text-lg font-bold text-amber-600">{completeness.clarification}</p>
                         <p className="text-xs text-amber-600">needed</p>
+                        {completeness.lovMismatches > 0 && (
+                          <p className="text-xs text-orange-500 mt-1" title="Values extracted but don't match master LOV">
+                            <i className="fas fa-exclamation-triangle mr-0.5"></i>{completeness.lovMismatches} LOV mismatch{completeness.lovMismatches > 1 ? 'es' : ''}
+                          </p>
+                        )}
                       </div>
                       <div className="text-center px-4 py-2 bg-red-50 rounded-lg">
                         <p className="text-xs text-gray-500">Missing</p>
@@ -3495,8 +4166,15 @@ const getSumInsuredFromData = (responseData) => {
                       <div style={{width: `${completeness.total > 0 ? (completeness.clarification / completeness.total) * 100 : 0}%`, height: '100%', background: '#ca8a04', borderRadius: 2}}></div>
                       <div style={{width: `${completeness.total > 0 ? (completeness.missing / completeness.total) * 100 : 0}%`, height: '100%', background: '#dc2626', opacity: 0.3, borderRadius: 2}}></div>
                     </div>
-                    <div className="flex justify-between mt-2 text-xs text-gray-500">
-                      {Object.entries(RFQ_DATA_MODEL).map(([key, section]) => {
+                    <div className="flex justify-between mt-2 text-xs text-gray-500 flex-wrap gap-1">
+                      {Object.entries(RFQ_DATA_MODEL)
+                        .filter(([key]) => {
+                          if (rfqQuoteMode === 'fresh') {
+                            return !['existingPolicy', 'claimsExperience', 'demographics'].includes(key);
+                          }
+                          return true;
+                        })
+                        .map(([key, section]) => {
                         const s = completeness.bySection[key] || {};
                         return (
                           <span key={key} title={`${s.extracted || 0}/${s.total || 0} extracted`}>
@@ -3508,8 +4186,61 @@ const getSumInsuredFromData = (responseData) => {
                   </div>
                 </div>
 
-                {/* Data Sections */}
-                {Object.entries(RFQ_DATA_MODEL).map(([sectionKey, section]) => {
+                {/* Fresh / Renewal Detection Badge */}
+                {rfqQuoteMode && (
+                  <div className="bg-white rounded-xl shadow-lg p-4 flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${rfqQuoteMode === 'fresh' ? 'bg-blue-100' : 'bg-purple-100'}`}>
+                        <i className={`fas ${rfqQuoteMode === 'fresh' ? 'fa-plus-circle text-blue-600' : 'fa-sync-alt text-purple-600'}`}></i>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">
+                          Detected as: <span className={rfqQuoteMode === 'fresh' ? 'text-blue-600' : 'text-purple-600'}>
+                            {rfqQuoteMode === 'fresh' ? 'Fresh Quote' : 'Renewal Quote'}
+                          </span>
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          {rfqQuoteMode === 'fresh'
+                            ? 'Showing fields for new policy — renewal sections hidden'
+                            : 'Showing all fields including existing policy & claims'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-gray-400 mr-1">Override:</span>
+                      <button
+                        onClick={() => setRfqQuoteMode('fresh')}
+                        className={`px-3 py-1.5 rounded-l-lg text-xs font-medium border transition-colors ${
+                          rfqQuoteMode === 'fresh'
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'
+                        }`}>
+                        Fresh
+                      </button>
+                      <button
+                        onClick={() => setRfqQuoteMode('renewal')}
+                        className={`px-3 py-1.5 rounded-r-lg text-xs font-medium border transition-colors ${
+                          rfqQuoteMode === 'renewal'
+                            ? 'bg-purple-600 text-white border-purple-600'
+                            : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'
+                        }`}>
+                        Renewal
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Data Sections — hide renewal-only sections when Fresh is selected */}
+                {Object.entries(RFQ_DATA_MODEL)
+                  .filter(([sectionKey]) => {
+                    // Hide renewal-only sections when mode is 'fresh'
+                    if (rfqQuoteMode === 'fresh') {
+                      const renewalOnlySections = ['existingPolicy', 'claimsExperience', 'demographics'];
+                      return !renewalOnlySections.includes(sectionKey);
+                    }
+                    return true;
+                  })
+                  .map(([sectionKey, section]) => {
                   const sectionData = rfqData?.[sectionKey] || {};
                   const sComp = completeness.bySection[sectionKey] || {};
                   const isExpanded = rfqExpandedSection === sectionKey;
@@ -3542,10 +4273,15 @@ const getSumInsuredFromData = (responseData) => {
                               const status = fieldData?.status || 'missing';
                               const value = fieldData?.value;
                               const note = fieldData?.note;
+                              const isEditable = status === 'clarification' || status === 'missing';
+                              const hasLov = !!RFQ_LOV[fieldKey];
+                              const isLovMismatch = fieldData?.lovMismatch === true;
 
                               const statusStyles = {
                                 extracted: { bg: '#f0fdf4', border: '#bbf7d0', icon: 'fa-check-circle', iconColor: '#16a34a', label: 'Extracted' },
-                                clarification: { bg: '#fffbeb', border: '#fde68a', icon: 'fa-question-circle', iconColor: '#ca8a04', label: 'Needs Clarification' },
+                                clarification: isLovMismatch
+                                  ? { bg: '#fff7ed', border: '#fed7aa', icon: 'fa-exclamation-triangle', iconColor: '#ea580c', label: 'LOV Mismatch' }
+                                  : { bg: '#fffbeb', border: '#fde68a', icon: 'fa-question-circle', iconColor: '#ca8a04', label: 'Needs Clarification' },
                                 missing: { bg: '#fef2f2', border: '#fecaca', icon: 'fa-times-circle', iconColor: '#dc2626', label: 'Not Found' }
                               };
                               const st = statusStyles[status] || statusStyles.missing;
@@ -3559,18 +4295,63 @@ const getSumInsuredFromData = (responseData) => {
                                         <span className="text-xs font-semibold text-gray-600">{fieldDef.label}</span>
                                         {fieldDef.required && <span className="text-xs text-red-400">*</span>}
                                       </div>
-                                      {value ? (
-                                        <p className="text-sm font-medium text-gray-800 ml-5">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</p>
+
+                                      {/* Editable: show input/dropdown for clarification & missing fields */}
+                                      {isEditable ? (
+                                        <div className="ml-5 mt-1">
+                                          {hasLov ? (
+                                            <select
+                                              value={value || ''}
+                                              onChange={(e) => updateRfqField(sectionKey, fieldKey, e.target.value)}
+                                              className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+                                            >
+                                              <option value="">— Select from master list —</option>
+                                              {RFQ_LOV[fieldKey].map(opt => (
+                                                <option key={opt} value={opt}>{opt}</option>
+                                              ))}
+                                            </select>
+                                          ) : (
+                                            <input
+                                              type="text"
+                                              defaultValue={value || ''}
+                                              placeholder="Enter value..."
+                                              onBlur={(e) => updateRfqField(sectionKey, fieldKey, e.target.value)}
+                                              onKeyDown={(e) => { if (e.key === 'Enter') { e.target.blur(); } }}
+                                              className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+                                            />
+                                          )}
+                                          {note && (
+                                            <p className="text-xs mt-1" style={{color: st.iconColor}}>
+                                              <i className="fas fa-info-circle mr-1"></i>{note}
+                                            </p>
+                                          )}
+                                        </div>
                                       ) : (
-                                        <p className="text-xs text-gray-400 italic ml-5">—</p>
-                                      )}
-                                      {note && (
-                                        <p className="text-xs mt-1 ml-5" style={{color: st.iconColor}}>
-                                          <i className="fas fa-info-circle mr-1"></i>{note}
-                                        </p>
+                                        /* Read-only: extracted fields show value with inline edit icon */
+                                        <div className="ml-5 flex items-center gap-2">
+                                          <p className="text-sm font-medium text-gray-800">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</p>
+                                          <button
+                                            onClick={() => {
+                                              // Allow editing even extracted fields — reset to clarification so input appears
+                                              setRfqData(prev => {
+                                                const updated = JSON.parse(JSON.stringify(prev));
+                                                if (updated[sectionKey] && updated[sectionKey][fieldKey]) {
+                                                  updated[sectionKey][fieldKey].status = 'clarification';
+                                                  updated[sectionKey][fieldKey].note = 'Editing extracted value';
+                                                  updated[sectionKey][fieldKey].lovMismatch = false;
+                                                }
+                                                return updated;
+                                              });
+                                            }}
+                                            className="text-gray-400 hover:text-blue-500 transition-colors"
+                                            title="Edit this field"
+                                          >
+                                            <i className="fas fa-pen text-xs"></i>
+                                          </button>
+                                        </div>
                                       )}
                                     </div>
-                                    <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background: st.border, color: st.iconColor}}>
+                                    <span className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap" style={{background: st.border, color: st.iconColor}}>
                                       {st.label}
                                     </span>
                                   </div>
@@ -3583,6 +4364,28 @@ const getSumInsuredFromData = (responseData) => {
                     </div>
                   );
                 })}
+
+                {/* Download Bar */}
+                <div className="bg-white rounded-xl shadow-lg p-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">
+                        <i className="fas fa-download mr-2 text-blue-500"></i>Download Extracted Data
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">Export the corrected data for use in your quote system</p>
+                    </div>
+                    <div className="flex space-x-3">
+                      <button onClick={downloadRfqJson}
+                        className="flex items-center px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors">
+                        <i className="fas fa-code mr-2 text-amber-500"></i>Download JSON
+                      </button>
+                      <button onClick={downloadRfqExcel}
+                        className="flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors">
+                        <i className="fas fa-file-excel mr-2"></i>Download Excel
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -4673,6 +5476,1679 @@ const getSumInsuredFromData = (responseData) => {
             <div className="text-center">
               <p className="text-xs">Enterprise-grade • Secure by design • IRDAI-aligned</p>
             </div>
+          </div>
+        </footer>
+      </div>
+    );
+  }
+
+  // ========== INTERMEDIARY MANAGEMENT PAGE ==========
+  if (page === 'intermediary') {
+    const imTabs = [
+      { key: 'onboarding', label: 'Agent Onboarding', icon: 'fa-user-plus' },
+      { key: 'edu_verify', label: 'Education Verification', icon: 'fa-graduation-cap' },
+    ];
+
+    // ── Education Verification helpers ──
+    const loadProspectList = async () => {
+      if (eduProspectList.length > 0) return;
+      try {
+        const res = await fetch('/api/intermediary/arm/prospects', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setEduProspectList(data.prospects || []);
+        }
+      } catch (e) { /* silent */ }
+    };
+
+    const lookupProspect = async (id) => {
+      if (!id || id.trim() === '') return;
+      setEduProspectLoading(true);
+      setEduProspectError(null);
+      setEduProspectRecord(null);
+      setEduResult(null);
+      setEduVerifyError(null);
+      try {
+        const res = await fetch(`/api/intermediary/arm/prospect/${id.trim()}`, { credentials: 'include' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Not found');
+        setEduProspectRecord(data);
+      } catch (e) {
+        setEduProspectError(e.message);
+      } finally {
+        setEduProspectLoading(false);
+      }
+    };
+
+    const handleEduDocSelect = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      setEduDocFile(file);
+      setEduResult(null);
+      setEduVerifyError(null);
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = ev => setEduDocPreview(ev.target.result);
+        reader.readAsDataURL(file);
+      } else {
+        setEduDocPreview(null);
+      }
+    };
+
+    const runEduVerification = async () => {
+      console.log('[EduVerify] button clicked', { hasRecord: !!eduProspectRecord, hasFile: !!eduDocFile });
+      if (!eduProspectRecord || !eduDocFile) {
+        console.warn('[EduVerify] early return — missing record or file');
+        return;
+      }
+      console.log('[EduVerify] starting verification...');
+      setEduVerifying(true);
+      setEduResult(null);
+      setEduVerifyError(null);
+      try {
+        const formData = new FormData();
+        formData.append('document', eduDocFile);
+        formData.append('prospect_id', eduProspectRecord.prospect_id);
+        formData.append('arm_record_override', JSON.stringify(eduProspectRecord));
+        console.log('[EduVerify] posting to /api/intermediary/education/verify with ARM override', { name: eduProspectRecord.name, qual: eduProspectRecord.claimed_qualification });
+        const res = await fetch('/api/intermediary/education/verify', {
+          method: 'POST',
+          credentials: 'include',
+          body: formData,
+        });
+        console.log('[EduVerify] response status:', res.status);
+        const data = await res.json();
+        console.log('[EduVerify] response data:', data);
+        if (!res.ok) throw new Error(data.error || 'Verification failed');
+        if (!data.success) throw new Error(data.error || 'AI extraction failed — check your API key');
+        setEduResult(data);
+      } catch (e) {
+        console.error('[EduVerify] error:', e.message);
+        setEduVerifyError(e.message);
+      } finally {
+        setEduVerifying(false);
+      }
+    };
+
+    const severityBadge = (severity) => {
+      if (!severity) return null;
+      const map = { high: 'bg-red-100 text-red-700 border border-red-200', medium: 'bg-amber-100 text-amber-700 border border-amber-200', low: 'bg-blue-100 text-blue-700 border border-blue-200', info: 'bg-gray-100 text-gray-600 border border-gray-200' };
+      return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide ${map[severity] || map.info}`}>{severity}</span>;
+    };
+
+    const statusIcon = (status) => {
+      if (status === 'PASS') return <i className="fas fa-check-circle text-green-500"></i>;
+      if (status === 'FAIL') return <i className="fas fa-times-circle text-red-500"></i>;
+      if (status === 'FLAG') return <i className="fas fa-exclamation-triangle text-amber-500"></i>;
+      return <i className="fas fa-question-circle text-gray-400"></i>;
+    };
+
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+
+        {/* Header — identical to RFQ page */}
+        <header className="bg-white shadow-sm border-b">
+          <div className="container mx-auto px-4 py-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2 w-56">
+                <img
+                  src="/logos/attributum-logo.png"
+                  alt="Attributum Logo"
+                  style={{maxHeight: '56px', maxWidth: '180px', width: 'auto', height: 'auto', objectFit: 'contain'}}
+                  onError={(e) => { e.target.style.display='none'; e.target.nextElementSibling.style.display='flex'; }}
+                />
+                <div className="w-10 h-10 bg-blue-600 rounded-lg items-center justify-center" style={{display:'none'}}>
+                  <span className="text-white font-bold text-xl">A</span>
+                </div>
+              </div>
+
+              <div className="flex-1 text-center">
+                <h1 className="text-3xl font-bold text-gray-800">PIVOT Intermediary Management</h1>
+                <p className="text-sm text-gray-500">Broker & channel partner lifecycle management</p>
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 w-56">
+                <img
+                  src="/logos/pivot-logo.png"
+                  alt="PIVOT Logo"
+                  style={{maxHeight: '56px', maxWidth: '160px', width: 'auto', height: 'auto', objectFit: 'contain'}}
+                  onError={(e) => { e.target.style.display='none'; e.target.nextElementSibling.style.display='flex'; }}
+                />
+                <div className="w-10 h-10 bg-purple-600 rounded-lg items-center justify-center" style={{display:'none'}}>
+                  <span className="text-white font-bold text-xl">P</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Sub-header with back button */}
+        <div className="container mx-auto px-4 pt-6 pb-2">
+          <div className="max-w-7xl mx-auto flex justify-between items-center">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800">Intermediary Management</h2>
+              <p className="text-xs text-gray-500 mt-1">Onboard, manage and monitor brokers and channel partners</p>
+            </div>
+            <button onClick={() => setPage('home')}
+              className="px-4 py-2 border border-gray-300 text-gray-600 rounded hover:bg-gray-50 text-sm">
+              ← Back to Home
+            </button>
+          </div>
+        </div>
+
+        {/* Main layout: left sidebar + content */}
+        <div className="container mx-auto px-4 py-4 flex-1">
+          <div className="max-w-7xl mx-auto flex gap-6">
+
+            {/* Left sidebar tabs */}
+            <aside className="w-60 flex-shrink-0">
+              <nav className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Module Sections</p>
+                </div>
+                <ul>
+                  {imTabs.map(tab => (
+                    <li key={tab.key}>
+                      <button
+                        onClick={() => setImTab(tab.key)}
+                        className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors text-left
+                          ${imTab === tab.key
+                            ? 'bg-teal-50 text-teal-700 border-l-4 border-teal-500'
+                            : 'text-gray-600 hover:bg-gray-50 border-l-4 border-transparent'}`}>
+                        <i className={`fas ${tab.icon} w-4 text-center ${imTab === tab.key ? 'text-teal-500' : 'text-gray-400'}`}></i>
+                        {tab.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            </aside>
+
+            {/* Main content */}
+            <main className="flex-1 min-w-0">
+
+              {imTab === 'onboarding' && (
+                <div className="space-y-5">
+
+                  {/* Title bar + agent type toggle */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-6 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 bg-teal-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <i className="fas fa-user-plus text-teal-600 text-sm"></i>
+                      </div>
+                      <div>
+                        <h3 className="text-base font-semibold text-gray-800">Agent Onboarding</h3>
+                        <p className="text-xs text-gray-400">Fill application → upload KYC documents → AI verifies &amp; flags anomalies</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 font-medium">Agent Type:</span>
+                      <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
+                        <button onClick={() => setAgentType('posp')}
+                          className={`px-4 py-1.5 transition-colors ${agentType==='posp' ? 'bg-teal-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>POSP</button>
+                        <button onClick={() => setAgentType('licensed')}
+                          className={`px-4 py-1.5 transition-colors ${agentType==='licensed' ? 'bg-teal-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>Licensed Agent</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Form + document upload */}
+                  <div className="grid grid-cols-3 gap-5">
+
+                    {/* Left: Application Form */}
+                    <div className="col-span-2 space-y-4">
+                      {AGENT_FORM_SECTIONS.map(section => {
+                        const colorMap = { teal:['bg-teal-100','text-teal-600'], blue:['bg-blue-100','text-blue-600'], indigo:['bg-indigo-100','text-indigo-600'], purple:['bg-purple-100','text-purple-600'], orange:['bg-orange-100','text-orange-600'] };
+                        const [bgC, textC] = colorMap[section.color] || ['bg-gray-100','text-gray-600'];
+                        return (
+                          <div key={section.key} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div className="px-5 py-3 flex items-center gap-2 border-b border-gray-100">
+                              <div className={`w-7 h-7 ${bgC} rounded-md flex items-center justify-center flex-shrink-0`}>
+                                <i className={`fas ${section.icon} text-xs ${textC}`}></i>
+                              </div>
+                              <h4 className="text-sm font-semibold text-gray-700">{section.label}</h4>
+                            </div>
+                            <div className="p-5 grid grid-cols-2 gap-x-5 gap-y-3">
+                              {section.fields.map(field => (
+                                <div key={field.key} className={field.key==='address' ? 'col-span-2' : ''}>
+                                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                                    {field.label}{field.required && <span className="text-red-400 ml-0.5">*</span>}
+                                  </label>
+                                  {field.type==='select' ? (
+                                    <select value={agentForm[field.key]||''} onChange={e => setAgentForm(p=>({...p,[field.key]:e.target.value}))}
+                                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-200 focus:border-teal-400">
+                                      <option value="">— Select —</option>
+                                      {field.options.map(o=><option key={o} value={o}>{o}</option>)}
+                                    </select>
+                                  ) : (
+                                    <input type={field.type} value={agentForm[field.key]||''} onChange={e => setAgentForm(p=>({...p,[field.key]:e.target.value}))}
+                                      placeholder={field.type!=='date' ? `Enter ${field.label.toLowerCase()}` : ''}
+                                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-200 focus:border-teal-400" />
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Right: Document Upload */}
+                    <div className="col-span-1">
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden sticky top-4">
+                        <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+                          <div className="w-7 h-7 bg-gray-100 rounded-md flex items-center justify-center">
+                            <i className="fas fa-paperclip text-xs text-gray-500"></i>
+                          </div>
+                          <h4 className="text-sm font-semibold text-gray-700">KYC Documents</h4>
+                        </div>
+                        <div className="p-4 space-y-2">
+                          {AGENT_REQUIRED_DOCS.map(doc => {
+                            const uploaded = !!agentDocs[doc.key];
+                            return (
+                              <div key={doc.key} onClick={() => document.getElementById(`doc-${doc.key}`).click()}
+                                className={`flex items-center gap-3 p-3 rounded-lg border text-xs cursor-pointer transition-colors ${uploaded ? 'border-teal-300 bg-teal-50' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}>
+                                <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${uploaded ? 'bg-teal-100' : 'bg-white border border-gray-200'}`}>
+                                  <i className={`fas ${uploaded ? 'fa-check text-teal-600' : 'fa-upload text-gray-400'} text-xs`}></i>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className={`font-medium truncate ${uploaded ? 'text-teal-700' : 'text-gray-600'}`}>{doc.label}</p>
+                                  <p className="text-gray-400 truncate">{uploaded ? agentDocs[doc.key].name : (doc.required ? 'Required' : 'Optional')}</p>
+                                </div>
+                                <input id={`doc-${doc.key}`} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
+                                  onChange={e => { if(e.target.files[0]) setAgentDocs(p=>({...p,[doc.key]:e.target.files[0]})); }} />
+                              </div>
+                            );
+                          })}
+                          <div className="pt-2 border-t border-gray-100">
+                            <div className="flex justify-between text-xs text-gray-400 mb-1">
+                              <span>Documents uploaded</span>
+                              <span className="font-semibold text-gray-600">{Object.keys(agentDocs).length} / {AGENT_REQUIRED_DOCS.filter(d=>d.required).length} required</span>
+                            </div>
+                            <div className="w-full bg-gray-100 rounded-full h-1.5">
+                              <div className="bg-teal-500 h-1.5 rounded-full transition-all"
+                                style={{width:`${Math.min(100,Math.round(Object.keys(agentDocs).length/AGENT_REQUIRED_DOCS.filter(d=>d.required).length*100))}%`}}></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Verify CTA */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-6 py-4 flex items-center justify-between">
+                    <p className="text-sm text-gray-500"><i className="fas fa-info-circle mr-1 text-teal-400"></i>AI extracts from documents, compares against the application and flags anomalies.</p>
+                    <button onClick={handleAgentVerify} disabled={agentVerifying || Object.keys(agentDocs).length===0}
+                      className="flex items-center gap-2 px-6 py-2.5 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors">
+                      {agentVerifying ? <><i className="fas fa-spinner fa-spin"></i> Verifying…</> : <><i className="fas fa-search-plus"></i> Verify &amp; Extract</>}
+                    </button>
+                  </div>
+
+                  {/* Results */}
+                  {agentVerification && (
+                    <div className="space-y-4">
+
+                      {/* Summary */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-6 py-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-semibold text-gray-700"><i className="fas fa-shield-alt mr-2 text-teal-500"></i>Verification Summary</h4>
+                          <span className="text-xs text-gray-400">Verified at {new Date(agentVerification.timestamp).toLocaleTimeString()}</span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-3">
+                          {[
+                            {label:'Fields Extracted', value:Object.keys(agentVerification.extracted).length, color:'text-teal-600', bg:'bg-teal-50'},
+                            {label:'High Severity',    value:agentVerification.anomalies.filter(a=>a.severity==='high').length,   color:'text-red-600',   bg:'bg-red-50'},
+                            {label:'Medium Severity',  value:agentVerification.anomalies.filter(a=>a.severity==='medium').length, color:'text-amber-600', bg:'bg-amber-50'},
+                            {label:'Low / Info',       value:agentVerification.anomalies.filter(a=>a.severity==='low').length,    color:'text-blue-600',  bg:'bg-blue-50'},
+                          ].map(({label,value,color,bg}) => (
+                            <div key={label} className={`${bg} rounded-lg p-3 text-center`}>
+                              <p className={`text-2xl font-bold ${color}`}>{value}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Extraction vs Application table */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="px-6 py-3 border-b border-gray-100 flex items-center gap-2">
+                          <i className="fas fa-table text-teal-500 text-sm"></i>
+                          <h4 className="text-sm font-semibold text-gray-700">Document Extraction vs Application Data</h4>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-gray-50 border-b border-gray-100">
+                                {['Field','Declared (Application)','Extracted (Document)','Source','Confidence','Status'].map(h => (
+                                  <th key={h} className="text-left px-5 py-2.5 text-gray-500 font-semibold">{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Object.entries(agentVerification.extracted).map(([key, row]) => (
+                                <tr key={key} className="border-b border-gray-50 hover:bg-gray-50">
+                                  <td className="px-5 py-2.5 font-medium text-gray-700">{key.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</td>
+                                  <td className="px-5 py-2.5 text-gray-600">{row.declared || <span className="text-gray-300 italic">—</span>}</td>
+                                  <td className="px-5 py-2.5 text-gray-600">{row.extracted || <span className="text-gray-300 italic">—</span>}</td>
+                                  <td className="px-5 py-2.5 text-gray-400">{row.source}</td>
+                                  <td className="px-5 py-2.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <div className="w-14 bg-gray-100 rounded-full h-1.5">
+                                        <div className={`h-1.5 rounded-full ${row.confidence>0.9?'bg-teal-400':row.confidence>0.8?'bg-amber-400':'bg-red-400'}`} style={{width:`${Math.round(row.confidence*100)}%`}}></div>
+                                      </div>
+                                      <span className="text-gray-400">{Math.round(row.confidence*100)}%</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-5 py-2.5">
+                                    {row.match
+                                      ? <span className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded-full font-semibold">✓ Match</span>
+                                      : <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-semibold">✗ Mismatch</span>}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Anomaly flags */}
+                      {agentVerification.anomalies.length > 0 ? (
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                          <div className="px-6 py-3 border-b border-gray-100 flex items-center gap-2">
+                            <i className="fas fa-exclamation-triangle text-amber-500 text-sm"></i>
+                            <h4 className="text-sm font-semibold text-gray-700">Anomaly Flags ({agentVerification.anomalies.length})</h4>
+                          </div>
+                          <div className="p-4 space-y-2">
+                            {agentVerification.anomalies.map((flag, i) => {
+                              const sevStyle = {
+                                high:   ['bg-red-50 border-red-200',   'text-red-700 bg-red-100',   'fa-times-circle text-red-500'],
+                                medium: ['bg-amber-50 border-amber-200','text-amber-700 bg-amber-100','fa-exclamation-circle text-amber-500'],
+                                low:    ['bg-blue-50 border-blue-200',  'text-blue-700 bg-blue-100', 'fa-info-circle text-blue-400'],
+                              }[flag.severity] || ['bg-gray-50 border-gray-200','text-gray-600 bg-gray-100','fa-circle text-gray-400'];
+                              return (
+                                <div key={i} className={`flex items-start gap-3 p-3 rounded-lg border ${sevStyle[0]}`}>
+                                  <i className={`fas ${sevStyle[2].split(' ')[0]} mt-0.5 flex-shrink-0 ${sevStyle[2].split(' ')[1]}`}></i>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${sevStyle[1]}`}>{flag.severity.toUpperCase()}</span>
+                                      <span className="text-xs font-semibold text-gray-700">{flag.label}</span>
+                                      <span className="text-xs text-gray-400 ml-auto">{flag.rule}</span>
+                                    </div>
+                                    <p className="text-xs text-gray-600">{flag.message}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-teal-50 border border-teal-200 rounded-xl p-5 flex items-center gap-3">
+                          <i className="fas fa-check-circle text-teal-500 text-xl"></i>
+                          <div>
+                            <p className="text-sm font-semibold text-teal-700">All checks passed</p>
+                            <p className="text-xs text-teal-600">No anomalies detected. Application is ready for approval.</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Decision */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-6 py-4 flex items-center justify-between">
+                        <p className="text-sm text-gray-500">Review complete — select a decision to proceed</p>
+                        <div className="flex gap-3">
+                          <button className="px-5 py-2 bg-red-50 text-red-600 border border-red-200 text-sm font-semibold rounded-lg hover:bg-red-100 transition-colors">
+                            <i className="fas fa-times mr-1.5"></i>Reject
+                          </button>
+                          <button className="px-5 py-2 bg-amber-50 text-amber-600 border border-amber-200 text-sm font-semibold rounded-lg hover:bg-amber-100 transition-colors">
+                            <i className="fas fa-question-circle mr-1.5"></i>Request More Info
+                          </button>
+                          <button disabled={agentVerification.anomalies.filter(a=>a.severity==='high').length>0}
+                            className="px-5 py-2 bg-teal-600 text-white text-sm font-semibold rounded-lg hover:bg-teal-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors">
+                            <i className="fas fa-check mr-1.5"></i>Approve &amp; Activate
+                          </button>
+                        </div>
+                      </div>
+
+                    </div>
+                  )}
+
+                </div>
+              )}
+
+              {/* ── EDUCATION VERIFICATION TAB ── */}
+              {imTab === 'edu_verify' && (() => {
+                if (eduProspectList.length === 0) loadProspectList();
+
+                const step1Done = !!eduProspectRecord;
+                const step2Done = !!eduDocFile;
+                const canVerify = step1Done && step2Done && !eduVerifying;
+                const hasResults = eduResult && eduResult.success;
+
+                return (
+                  <div className="space-y-0">
+
+                    {/* ── HORIZONTAL STEP TRACKER ── */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-6 py-4 mb-4">
+                      <div className="flex items-center">
+                        {[
+                          { n: 1, label: 'Load or Create Prospect', done: step1Done },
+                          { n: 2, label: 'Upload Education Document', done: step2Done },
+                          { n: 3, label: 'View Verification Results', done: hasResults },
+                        ].map((s, i) => (
+                          <React.Fragment key={s.n}>
+                            <div className="flex items-center gap-2.5 flex-1">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${s.done ? 'bg-teal-500 text-white' : i === 0 && !step1Done ? 'bg-teal-100 border-2 border-teal-500 text-teal-700' : i === 1 && step1Done && !step2Done ? 'bg-teal-100 border-2 border-teal-500 text-teal-700' : i === 2 && step2Done && !hasResults ? 'bg-teal-100 border-2 border-teal-500 text-teal-700' : 'bg-gray-100 border-2 border-gray-200 text-gray-400'}`}>
+                                {s.done ? <i className="fas fa-check text-xs"></i> : s.n}
+                              </div>
+                              <span className={`text-sm font-semibold ${s.done ? 'text-teal-600' : 'text-gray-400'}`}>{s.label}</span>
+                            </div>
+                            {i < 2 && <div className={`h-0.5 flex-shrink-0 w-8 mx-1 rounded ${[step1Done, step2Done][i] ? 'bg-teal-400' : 'bg-gray-200'}`}></div>}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* ── STEP 1: FIND PROSPECT ── */}
+                    <div className={`bg-white rounded-xl shadow-sm border-2 mb-4 transition-all ${step1Done ? 'border-teal-300' : 'border-teal-500 shadow-teal-100 shadow-md'}`}>
+                      {/* Header */}
+                      <div className={`px-6 py-3 flex items-center justify-between rounded-t-xl ${step1Done ? 'bg-teal-50' : 'bg-teal-600'}`}>
+                        <div className="flex items-center gap-2.5">
+                          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${step1Done ? 'bg-teal-500 text-white' : 'bg-white text-teal-700'}`}>
+                            {step1Done ? <i className="fas fa-check"></i> : '1'}
+                          </span>
+                          <span className={`font-semibold text-sm ${step1Done ? 'text-teal-700' : 'text-white'}`}>Find Prospect in ARM System or Create New Case</span>
+                        </div>
+                        {step1Done && (
+                          <button
+                            onClick={() => { setEduProspectRecord(null); setEduProspectId(''); setEduResult(null); setEduDocFile(null); setEduDocPreview(null); setEduEditMode(false); setEduEditFields({}); setEduNewCaseMode(false); setEduNewCaseFields({}); }}
+                            className="text-xs text-teal-600 hover:text-teal-800 underline font-medium">
+                            ← Change Prospect
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="px-6 py-5">
+                        {!step1Done ? (
+                          <div>
+                            {/* Mode toggle tabs */}
+                            <div className="flex gap-2 mb-4">
+                              <button
+                                onClick={() => setEduNewCaseMode(false)}
+                                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold border transition-colors ${!eduNewCaseMode ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+                                <i className="fas fa-search text-xs"></i> Find in ARM
+                              </button>
+                              <button
+                                onClick={() => { setEduNewCaseMode(true); setEduNewCaseFields({}); }}
+                                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold border transition-colors ${eduNewCaseMode ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+                                <i className="fas fa-plus text-xs"></i> Create New Case
+                              </button>
+                            </div>
+
+                            {!eduNewCaseMode ? (
+                              /* ── ARM lookup ── */
+                              <div>
+                                <p className="text-sm text-gray-600 mb-3">Enter the Prospect ID to load their application data from the ARM system.</p>
+                                <div className="flex gap-3">
+                                  <div className="flex-1">
+                                    <input
+                                      list="prospect-list-ev"
+                                      type="text"
+                                      className="border-2 border-gray-300 rounded-lg px-4 py-3 text-base w-full focus:outline-none focus:ring-0 focus:border-teal-500"
+                                      placeholder="Type Prospect ID  e.g. 6100210001"
+                                      value={eduProspectId}
+                                      onChange={e => setEduProspectId(e.target.value)}
+                                      onKeyDown={e => e.key === 'Enter' && lookupProspect(eduProspectId)}
+                                    />
+                                    <datalist id="prospect-list-ev">
+                                      {eduProspectList.map(p => (
+                                        <option key={p.prospect_id} value={p.prospect_id}>{p.prospect_id} — {p.name}</option>
+                                      ))}
+                                    </datalist>
+                                    <p className="text-xs text-gray-400 mt-1.5">
+                                      <i className="fas fa-lightbulb text-amber-400 mr-1"></i>
+                                      <span className="text-green-600 font-semibold">✓ Clean:</span>{' '}
+                                      {['6100210001','6100210002','6100210003'].map((id, i) => (
+                                        <span key={id}><span className="font-mono text-teal-700 cursor-pointer hover:underline font-semibold" onClick={() => setEduProspectId(id)}>{id}</span>{i < 2 ? ' · ' : ''}</span>
+                                      ))}{' '}
+                                      &nbsp;<span className="text-red-500 font-semibold">✗ Anomalies:</span>{' '}
+                                      {['6100210004','6100210005','6100210006'].map((id, i) => (
+                                        <span key={id}><span className="font-mono text-red-600 cursor-pointer hover:underline font-semibold" onClick={() => setEduProspectId(id)}>{id}</span>{i < 2 ? ' · ' : ''}</span>
+                                      ))}
+                                    </p>
+                                  </div>
+                                  <button
+                                    onClick={() => lookupProspect(eduProspectId)}
+                                    disabled={eduProspectLoading || !eduProspectId.trim()}
+                                    className="px-6 py-3 bg-teal-600 text-white rounded-lg text-sm font-bold hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap self-start">
+                                    {eduProspectLoading
+                                      ? <><i className="fas fa-spinner fa-spin"></i> Loading…</>
+                                      : <><i className="fas fa-search"></i> Load Prospect</>}
+                                  </button>
+                                </div>
+                                {eduProspectError && (
+                                  <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">
+                                    <i className="fas fa-exclamation-circle"></i> {eduProspectError}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              /* ── New manual case form ── */
+                              <div>
+                                <p className="text-sm text-gray-600 mb-4">Enter the applicant's details as they appear in your ARM system. A temporary case will be created for this session only.</p>
+                                <div className="grid grid-cols-2 gap-x-5 gap-y-3 mb-4">
+                                  {/* Row 1 */}
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Full Name <span className="text-red-400">*</span></label>
+                                    <input type="text" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
+                                      placeholder="e.g. Rajesh Kumar Singh"
+                                      value={eduNewCaseFields.name || ''}
+                                      onChange={e => setEduNewCaseFields(f => ({...f, name: e.target.value}))} />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Date of Birth</label>
+                                    <input type="date" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
+                                      value={eduNewCaseFields.dob || ''}
+                                      onChange={e => setEduNewCaseFields(f => ({...f, dob: e.target.value}))} />
+                                  </div>
+                                  {/* Row 2 */}
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Mobile</label>
+                                    <input type="text" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
+                                      placeholder="10-digit mobile number"
+                                      value={eduNewCaseFields.mobile || ''}
+                                      onChange={e => setEduNewCaseFields(f => ({...f, mobile: e.target.value}))} />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Agent Type</label>
+                                    <select className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
+                                      value={eduNewCaseFields.agent_type || 'POSP'}
+                                      onChange={e => setEduNewCaseFields(f => ({...f, agent_type: e.target.value}))}>
+                                      <option value="POSP">POSP</option>
+                                      <option value="Agent">Agent</option>
+                                      <option value="Broker">Broker</option>
+                                    </select>
+                                  </div>
+                                </div>
+
+                                {/* Education details — highlighted section */}
+                                <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
+                                  <p className="text-xs text-indigo-700 font-bold uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                                    <i className="fas fa-graduation-cap"></i> Education Details (ARM record)
+                                  </p>
+                                  <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+                                    <div className="col-span-2">
+                                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Claimed Qualification <span className="text-red-400">*</span></label>
+                                      <select className="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
+                                        value={eduNewCaseFields.claimed_qualification || ''}
+                                        onChange={e => setEduNewCaseFields(f => ({...f, claimed_qualification: e.target.value}))}>
+                                        <option value="">— Select qualification —</option>
+                                        {[
+                                          'Class X','Class XII','Graduate','Post Graduate',
+                                          'Masters of business administration',
+                                          'Bachelors of commerce','Masters in commerce',
+                                          'Bachelors of engineering','Masters in engineering',
+                                          'Associate/fellow of actuarial society of India',
+                                          'Associate/fellow of institute of chartered Accountants of India',
+                                          'Associate/fellow of institute of company secretaries of India',
+                                          'Associate/fellow of institute of costs & works accounts of India',
+                                          'Associate/fellow of insurance institute of India',
+                                          'Other'
+                                        ].map(q => <option key={q} value={q}>{q}</option>)}
+                                      </select>
+                                    </div>
+                                    <div className="col-span-2">
+                                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Board / University <span className="text-red-400">*</span></label>
+                                      <input type="text" className="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
+                                        placeholder="e.g. Maharashtra State Board of Secondary and Higher Secondary Education"
+                                        value={eduNewCaseFields.board_name || ''}
+                                        onChange={e => setEduNewCaseFields(f => ({...f, board_name: e.target.value}))} />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Roll Number <span className="text-red-400">*</span></label>
+                                      <input type="text" className="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
+                                        placeholder="e.g. D146176"
+                                        value={eduNewCaseFields.roll_number || ''}
+                                        onChange={e => setEduNewCaseFields(f => ({...f, roll_number: e.target.value}))} />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Passing Year <span className="text-red-400">*</span></label>
+                                      <input type="number" min="1950" max="2030" className="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
+                                        placeholder="e.g. 2011"
+                                        value={eduNewCaseFields.passing_year || ''}
+                                        onChange={e => setEduNewCaseFields(f => ({...f, passing_year: parseInt(e.target.value) || ''}))} />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Passing Month</label>
+                                      <select className="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
+                                        value={eduNewCaseFields.passing_month || ''}
+                                        onChange={e => setEduNewCaseFields(f => ({...f, passing_month: parseInt(e.target.value) || ''}))}>
+                                        <option value="">— Month —</option>
+                                        {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m,i) => <option key={i+1} value={i+1}>{m} ({i+1})</option>)}
+                                      </select>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Submit row */}
+                                <div className="flex items-center gap-3 mt-4">
+                                  <button
+                                    onClick={() => {
+                                      const f = eduNewCaseFields;
+                                      if (!f.name || !f.claimed_qualification || !f.board_name || !f.roll_number || !f.passing_year) {
+                                        alert('Please fill in all required fields (marked with *).');
+                                        return;
+                                      }
+                                      const manualId = 'MANUAL-' + Date.now().toString().slice(-6);
+                                      setEduProspectRecord({
+                                        prospect_id: manualId,
+                                        name: f.name,
+                                        dob: f.dob || '',
+                                        mobile: f.mobile || '',
+                                        email: f.email || '',
+                                        agent_type: f.agent_type || 'POSP',
+                                        branch: 'Manual Entry',
+                                        claimed_qualification: f.claimed_qualification,
+                                        board_name: f.board_name,
+                                        roll_number: f.roll_number,
+                                        passing_year: f.passing_year,
+                                        passing_month: f.passing_month || '',
+                                        status: 'Pending Verification',
+                                        _manual: true,
+                                      });
+                                      setEduNewCaseMode(false);
+                                      setEduResult(null);
+                                      setEduDocFile(null);
+                                      setEduDocPreview(null);
+                                    }}
+                                    className="px-6 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 flex items-center gap-2">
+                                    <i className="fas fa-check-circle"></i> Create Case &amp; Continue
+                                  </button>
+                                  <button onClick={() => setEduNewCaseMode(false)} className="px-4 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">
+                                    Cancel
+                                  </button>
+                                  <p className="text-xs text-gray-400 ml-1"><i className="fas fa-info-circle mr-1 text-indigo-300"></i>This case exists only for this session — nothing is saved to ARM.</p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          /* Prospect card — editable */
+                          <div>
+                            {/* Name + edit toggle */}
+                            <div className="flex items-center gap-3 mb-4">
+                              <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center flex-shrink-0 text-teal-600 font-bold text-base">
+                                {(eduEditMode ? (eduEditFields.name || eduProspectRecord.name) : eduProspectRecord.name).charAt(0)}
+                              </div>
+                              <div className="flex-1">
+                                {eduEditMode
+                                  ? <input className="text-lg font-bold text-gray-800 border-b-2 border-teal-400 focus:outline-none bg-transparent w-full" value={eduEditFields.name ?? eduProspectRecord.name} onChange={e => setEduEditFields(f => ({...f, name: e.target.value}))} />
+                                  : <p className="text-lg font-bold text-gray-800">{eduProspectRecord.name}</p>
+                                }
+                                <p className="text-xs text-gray-400 flex items-center gap-2">
+                                  {eduProspectRecord.prospect_id} · {eduProspectRecord.agent_type}
+                                  {eduProspectRecord._manual && (
+                                    <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-semibold">Manual Case</span>
+                                  )}
+                                </p>
+                              </div>
+                              {!eduEditMode ? (
+                                <button onClick={() => { setEduEditMode(true); setEduEditFields({}); }} className="flex items-center gap-1.5 text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 rounded-lg px-3 py-1.5 transition-colors">
+                                  <i className="fas fa-pencil-alt text-xs"></i> Edit Details
+                                </button>
+                              ) : (
+                                <div className="flex gap-2">
+                                  <button onClick={() => { setEduProspectRecord(r => ({...r, ...eduEditFields})); setEduEditMode(false); setEduResult(null); }} className="flex items-center gap-1.5 text-xs bg-teal-600 text-white rounded-lg px-3 py-1.5 hover:bg-teal-700">
+                                    <i className="fas fa-check text-xs"></i> Save
+                                  </button>
+                                  <button onClick={() => { setEduEditMode(false); setEduEditFields({}); }} className="flex items-center gap-1.5 text-xs text-gray-500 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50">
+                                    Cancel
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Fields grid */}
+                            <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                              {[
+                                { key: 'dob', label: 'Date of Birth', highlight: false },
+                                { key: 'branch', label: 'Branch', highlight: false },
+                                { key: 'mobile', label: 'Mobile', highlight: false },
+                                { key: 'email', label: 'Email', highlight: false },
+                                { key: 'agent_type', label: 'Agent Type', highlight: false },
+                              ].map(field => (
+                                <div key={field.key}>
+                                  <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-0.5">{field.label}</p>
+                                  {eduEditMode ? (
+                                    <input
+                                      className="text-sm border-b border-gray-300 focus:border-teal-400 focus:outline-none bg-transparent w-full py-0.5 text-gray-700"
+                                      value={eduEditFields[field.key] ?? (eduProspectRecord[field.key] || '')}
+                                      onChange={e => setEduEditFields(f => ({...f, [field.key]: e.target.value}))}
+                                    />
+                                  ) : (
+                                    <p className="text-sm text-gray-700">{eduProspectRecord[field.key] || <span className="text-gray-300 italic">—</span>}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Education fields — separate section with teal highlight */}
+                            <div className="mt-4 pt-4 border-t border-gray-100">
+                              <p className="text-xs text-teal-600 font-bold uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                                <i className="fas fa-graduation-cap"></i> Education Details (ARM)
+                              </p>
+                              <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                                {[
+                                  { key: 'claimed_qualification', label: 'Qualification', highlight: true, span: 2 },
+                                  { key: 'board_name', label: 'Board / University', highlight: false, span: 2 },
+                                  { key: 'roll_number', label: 'Roll Number', highlight: true, span: 1 },
+                                  { key: 'passing_month', label: 'Passing Month', highlight: false, span: 1 },
+                                  { key: 'passing_year', label: 'Passing Year', highlight: true, span: 1 },
+                                ].map(field => (
+                                  <div key={field.key} className={field.span === 2 ? 'col-span-2' : ''}>
+                                    <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-0.5">{field.label}</p>
+                                    {eduEditMode ? (
+                                      <input
+                                        className={`text-sm border-b border-gray-300 focus:border-teal-400 focus:outline-none bg-transparent w-full py-0.5 ${field.highlight ? 'font-bold text-teal-700' : 'text-gray-700'}`}
+                                        value={eduEditFields[field.key] ?? (eduProspectRecord[field.key] || '')}
+                                        onChange={e => setEduEditFields(f => ({...f, [field.key]: e.target.value}))}
+                                      />
+                                    ) : (
+                                      <p className={`text-sm ${field.highlight ? 'font-bold text-teal-700' : 'text-gray-700'}`}>
+                                        {eduProspectRecord[field.key] || <span className="text-gray-300 italic">—</span>}
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            {eduEditMode && (
+                              <p className="text-xs text-amber-600 mt-3 flex items-center gap-1.5">
+                                <i className="fas fa-exclamation-triangle"></i>
+                                Edits apply only to this verification session — ARM system is not updated
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── STEP 2: UPLOAD DOCUMENT ── only shown after step 1 */}
+                    {step1Done && (
+                      <div className={`bg-white rounded-xl shadow-sm border-2 mb-4 transition-all ${step2Done ? 'border-teal-300' : 'border-teal-500 shadow-teal-100 shadow-md'}`}>
+                        <div className={`px-6 py-3 flex items-center gap-2.5 rounded-t-xl ${step2Done ? 'bg-teal-50' : 'bg-teal-600'}`}>
+                          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${step2Done ? 'bg-teal-500 text-white' : 'bg-white text-teal-700'}`}>
+                            {step2Done ? <i className="fas fa-check"></i> : '2'}
+                          </span>
+                          <span className={`font-semibold text-sm ${step2Done ? 'text-teal-700' : 'text-white'}`}>Upload Education Document</span>
+                          {step2Done && (
+                            <span className="ml-auto text-xs text-teal-500 font-medium">{eduDocFile?.name} · {(eduDocFile?.size / 1024).toFixed(1)} KB</span>
+                          )}
+                        </div>
+
+                        <div className="px-6 py-5">
+                          {!step2Done ? (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-4">Upload the education certificate or marksheet for <strong>{eduProspectRecord.name}</strong>. The AI will extract and verify details automatically.</p>
+                              <label className="flex flex-col items-center justify-center w-full py-8 border-2 border-dashed border-teal-300 rounded-xl cursor-pointer hover:bg-teal-50 transition-colors bg-gray-50">
+                                <input type="file" className="hidden" accept="image/*,application/pdf" onChange={handleEduDocSelect} />
+                                <i className="fas fa-cloud-upload-alt text-teal-300 text-4xl mb-2"></i>
+                                <p className="text-sm font-semibold text-gray-600">Click to upload the education document</p>
+                                <p className="text-xs text-gray-400 mt-0.5">Certificate or Marksheet · PNG, JPG, PDF · Max 15 MB</p>
+                              </label>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-3 px-4 py-3 bg-teal-50 border border-teal-200 rounded-lg">
+                              <i className="fas fa-file-image text-teal-500 flex-shrink-0"></i>
+                              <span className="flex-1 text-sm font-semibold text-teal-700 truncate min-w-0">{eduDocFile.name}</span>
+                              <span className="text-xs text-gray-400 flex-shrink-0">{(eduDocFile.size / 1024).toFixed(1)} KB</span>
+                              <label className="flex-shrink-0 flex items-center gap-1 text-xs text-gray-500 hover:text-teal-700 border border-gray-200 hover:border-teal-400 rounded px-2 py-1 cursor-pointer bg-white transition-colors">
+                                <input type="file" className="hidden" accept="image/*,application/pdf" onChange={handleEduDocSelect} />
+                                <i className="fas fa-sync-alt text-xs"></i> Replace
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── VALIDATE BUTTON — standalone, outside all cards ── */}
+                    {step1Done && step2Done && !hasResults && (
+                      <div style={{marginTop:'16px', marginBottom:'8px'}}>
+                        <button
+                          onClick={runEduVerification}
+                          disabled={eduVerifying}
+                          style={{width:'100%', padding:'18px', fontSize:'17px', fontWeight:'800', borderRadius:'12px', border:'none', cursor: eduVerifying ? 'not-allowed' : 'pointer', background: eduVerifying ? '#5eead4' : '#0d9488', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', gap:'12px', boxShadow:'0 4px 14px rgba(13,148,136,0.35)'}}>
+                          {eduVerifying
+                            ? <><i className="fas fa-spinner fa-spin" style={{fontSize:'20px'}}></i> AI is extracting &amp; verifying qualification…</>
+                            : <><i className="fas fa-shield-alt" style={{fontSize:'20px'}}></i> Validate Educational Qualification</>}
+                        </button>
+                        {!eduVerifying && (
+                          <p style={{textAlign:'center', fontSize:'12px', color:'#9ca3af', marginTop:'6px'}}>
+                            <i className="fas fa-robot" style={{color:'#2dd4bf', marginRight:'4px'}}></i>
+                            AI extracts details from document · checks 4 IRDAI rules · compares with ARM
+                          </p>
+                        )}
+                        {eduVerifying && (
+                          <p style={{textAlign:'center', fontSize:'13px', color:'#0d9488', marginTop:'6px'}}>
+                            <i className="fas fa-eye" style={{marginRight:'4px'}}></i>
+                            Reading document · comparing with ARM · applying IRDAI rules…
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {eduVerifyError && (
+                      <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-5 py-4 text-sm text-red-700 flex items-start gap-2">
+                        <i className="fas fa-exclamation-circle mt-0.5 flex-shrink-0"></i>
+                        <span>{eduVerifyError}</span>
+                      </div>
+                    )}
+
+                    {/* ── STEP 3: RESULTS ── */}
+                    {hasResults && (
+                      <div className="space-y-4">
+
+                        {/* Re-verify option */}
+                        <div className="flex items-center justify-between bg-gray-50 rounded-xl px-5 py-3 border border-gray-200">
+                          <p className="text-xs text-gray-500">
+                            <i className="fas fa-check-circle text-teal-500 mr-1"></i>
+                            Verified with <strong>{eduResult.provider}</strong> · {eduResult.processing_time_ms}ms
+                          </p>
+                          <button
+                            onClick={() => { setEduResult(null); setEduDocFile(null); setEduDocPreview(null); setEduEditMode(false); }}
+                            className="text-xs text-teal-600 hover:text-teal-800 underline font-medium">
+                            ← Verify a Different Document
+                          </button>
+                        </div>
+
+                        {/* SCORE CARD */}
+                        {(() => {
+                          const score = eduResult.verification_score ?? 0;
+                          const st = eduResult.overall_status;
+                          const scoreColor = score >= 85 ? '#16a34a' : score >= 65 ? '#d97706' : score >= 40 ? '#ea580c' : '#dc2626';
+                          const scoreBg   = score >= 85 ? '#f0fdf4' : score >= 65 ? '#fffbeb' : score >= 40 ? '#fff7ed' : '#fef2f2';
+                          const scoreBorder = score >= 85 ? '#86efac' : score >= 65 ? '#fcd34d' : score >= 40 ? '#fdba74' : '#fca5a5';
+                          const scoreLabel = score >= 85 ? 'APPROVED' : score >= 65 ? 'REVIEW REQUIRED' : score >= 40 ? 'HIGH RISK' : 'REJECT';
+                          const scoreSub   = score >= 85 ? 'All checks passed — eligible for approval' : score >= 65 ? 'Minor anomalies found — manual review needed' : score >= 40 ? 'Significant issues — escalate for review' : 'Critical failures — application should be rejected';
+                          const R = 52; const CIRC = 2 * Math.PI * R;
+                          const fill = (score / 100) * CIRC;
+                          const breakdown = eduResult.score_breakdown || [];
+                          return (
+                            <div style={{background: scoreBg, border: `2px solid ${scoreBorder}`, borderRadius: '16px', padding: '24px 28px', position: 'relative', isolation: 'isolate'}}>
+                              <div style={{display:'flex', alignItems:'center', gap:'28px'}}>
+
+                                {/* Gauge */}
+                                <div style={{flexShrink:0}}>
+                                  <svg width="130" height="130" viewBox="0 0 140 140">
+                                    <circle cx="70" cy="70" r={R} fill="none" stroke="#e5e7eb" strokeWidth="13"/>
+                                    <circle cx="70" cy="70" r={R} fill="none" stroke={scoreColor} strokeWidth="13"
+                                      strokeLinecap="round"
+                                      strokeDasharray={`${fill} ${CIRC - fill}`}
+                                      transform="rotate(-90 70 70)"
+                                      style={{transition:'stroke-dasharray 0.8s ease'}}/>
+                                    <text x="70" y="63" textAnchor="middle" fontSize="30" fontWeight="800" fill={scoreColor}>{score}</text>
+                                    <text x="70" y="80" textAnchor="middle" fontSize="12" fill="#9ca3af">/ 100</text>
+                                    <text x="70" y="97" textAnchor="middle" fontSize="9.5" fontWeight="700" fill={scoreColor} letterSpacing="1">SCORE</text>
+                                  </svg>
+                                </div>
+
+                                {/* Label + bands */}
+                                <div style={{flex:1, minWidth:0}}>
+                                  <div style={{display:'flex', alignItems:'baseline', gap:'10px', flexWrap:'wrap'}}>
+                                    <p style={{fontSize:'22px', fontWeight:'900', color: scoreColor, lineHeight:1.1, letterSpacing:'-0.5px'}}>{scoreLabel}</p>
+                                    <p style={{fontSize:'13px', color:'#6b7280'}}>{eduProspectRecord.name} · {eduProspectRecord.prospect_id}</p>
+                                  </div>
+                                  <p style={{fontSize:'13px', color:'#374151', marginTop:'4px'}}>{scoreSub}</p>
+
+                                  {/* Threshold band bar */}
+                                  <div style={{marginTop:'14px'}}>
+                                    <div style={{position:'relative', height:'8px', borderRadius:'4px', background:'#e5e7eb', overflow:'visible'}}>
+                                      {/* Coloured zones */}
+                                      <div style={{position:'absolute', left:'0%', width:'40%', height:'100%', borderRadius:'4px 0 0 4px', background:'#fca5a5'}}/>
+                                      <div style={{position:'absolute', left:'40%', width:'25%', height:'100%', background:'#fdba74'}}/>
+                                      <div style={{position:'absolute', left:'65%', width:'20%', height:'100%', background:'#fcd34d'}}/>
+                                      <div style={{position:'absolute', left:'85%', width:'15%', height:'100%', borderRadius:'0 4px 4px 0', background:'#86efac'}}/>
+                                      {/* Score marker */}
+                                      <div style={{position:'absolute', left:`${score}%`, top:'-5px', width:'4px', height:'18px', background: scoreColor, borderRadius:'2px', transform:'translateX(-50%)', boxShadow:`0 0 0 2px white, 0 0 0 3px ${scoreColor}`}}/>
+                                    </div>
+                                    <div style={{display:'flex', justifyContent:'space-between', marginTop:'4px', fontSize:'10px', color:'#9ca3af', fontWeight:'600'}}>
+                                      <span>0 REJECT</span><span>40 HIGH RISK</span><span>65 REVIEW</span><span>85 APPROVE 100</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Per-rule score breakdown */}
+                                <div style={{flexShrink:0, minWidth:'168px'}}>
+                                  <p style={{fontSize:'10px', fontWeight:'700', color:'#6b7280', letterSpacing:'1px', marginBottom:'8px', textTransform:'uppercase'}}>Rule Contributions</p>
+                                  {breakdown.map(b => {
+                                    const pct = b.weight > 0 ? b.earned / b.weight : 1;
+                                    const ruleColor = pct === 1 ? '#16a34a' : pct >= 0.8 ? '#84cc16' : pct >= 0.4 ? '#d97706' : '#dc2626';
+                                    return (
+                                      <div key={b.rule_id} style={{display:'flex', alignItems:'center', gap:'7px', marginBottom:'5px'}}>
+                                        <span style={{fontSize:'10px', fontWeight:'700', color:'#9ca3af', width:'24px', flexShrink:0}}>{b.rule_id}</span>
+                                        <div style={{flex:1, height:'5px', borderRadius:'3px', background:'#e5e7eb', overflow:'hidden'}}>
+                                          <div style={{height:'100%', borderRadius:'3px', background: ruleColor, width:`${pct*100}%`, transition:'width 0.6s ease'}}/>
+                                        </div>
+                                        <span style={{fontSize:'10px', fontWeight:'700', color: ruleColor, width:'30px', textAlign:'right', flexShrink:0}}>{b.earned}/{b.weight}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* ANOMALIES — only shown if there are flags */}
+                        {(eduResult.rules || []).some(r => r.status !== 'PASS') && (
+                          <div className="rounded-xl overflow-hidden border-2 border-red-300 shadow-sm">
+                            <div className="bg-red-600 px-5 py-3 flex items-center gap-2">
+                              <i className="fas fa-exclamation-triangle text-white text-base"></i>
+                              <span className="text-white font-bold text-sm">Anomalies Detected</span>
+                              <span className="ml-auto bg-red-500 text-white text-xs font-bold px-2.5 py-0.5 rounded-full">
+                                {(eduResult.rules || []).filter(r => r.status !== 'PASS').length} issue{(eduResult.rules || []).filter(r => r.status !== 'PASS').length > 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            {(eduResult.rules || []).filter(r => r.status !== 'PASS').map((rule, i) => (
+                              <div key={rule.rule_id} className={`px-6 py-4 flex items-start gap-4 ${i > 0 ? 'border-t border-red-100' : ''} ${rule.severity === 'high' ? 'bg-red-50' : 'bg-amber-50'}`}>
+                                <i className={`fas text-xl flex-shrink-0 mt-0.5 ${rule.status === 'FAIL' ? 'fa-times-circle text-red-500' : 'fa-exclamation-triangle text-amber-500'}`}></i>
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-3 mb-1">
+                                    <span className="font-bold text-gray-800">{rule.rule_name}</span>
+                                    {severityBadge(rule.severity)}
+                                    <span className="text-xs text-gray-400 font-mono">{rule.rule_id}</span>
+                                  </div>
+                                  <p className="text-sm text-gray-700">{rule.detail}</p>
+                                  {(rule.arm_value || rule.doc_value) && (
+                                    <div className="flex flex-wrap gap-2 mt-2.5">
+                                      {rule.arm_value && (
+                                        <div className="flex items-center gap-1.5 bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-xs">
+                                          <i className="fas fa-database text-gray-400"></i>
+                                          <span className="text-gray-500">ARM says:</span>
+                                          <span className="font-bold text-gray-800">{rule.arm_value}</span>
+                                        </div>
+                                      )}
+                                      {rule.doc_value && (
+                                        <div className="flex items-center gap-1.5 bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-xs">
+                                          <i className="fas fa-file-alt text-gray-400"></i>
+                                          <span className="text-gray-500">Document says:</span>
+                                          <span className="font-bold text-gray-800">{rule.doc_value}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* RULE CHECKLIST */}
+                        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                          <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+                            <i className="fas fa-clipboard-check text-teal-500"></i>
+                            <span className="text-sm font-semibold text-gray-700">IRDAI Rule Results</span>
+                          </div>
+                          {(eduResult.rules || []).map((rule, i) => (
+                            <div key={rule.rule_id} className={`flex items-center gap-4 px-5 py-3.5 ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+                              <div className="flex-shrink-0">
+                                {rule.status === 'PASS'
+                                  ? <i className="fas fa-check-circle text-green-500 text-lg"></i>
+                                  : rule.status === 'FAIL'
+                                    ? <i className="fas fa-times-circle text-red-500 text-lg"></i>
+                                    : <i className="fas fa-exclamation-triangle text-amber-500 text-lg"></i>}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-semibold text-gray-800">{rule.rule_name}</span>
+                                  <span className="text-xs text-gray-400 font-mono">{rule.rule_id}</span>
+                                  {rule.severity && severityBadge(rule.severity)}
+                                </div>
+                                <p className="text-xs text-gray-500 mt-0.5">{rule.detail}</p>
+                              </div>
+                              <span className={`text-xs font-bold px-2.5 py-1 rounded flex-shrink-0 ${
+                                rule.status === 'PASS' ? 'bg-green-100 text-green-700' :
+                                rule.status === 'FAIL' ? 'bg-red-100 text-red-700' :
+                                'bg-amber-100 text-amber-700'
+                              }`}>{rule.status}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* EXTRACTED DATA */}
+                        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                          <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+                            <i className="fas fa-robot text-teal-500"></i>
+                            <span className="text-sm font-semibold text-gray-700">AI Extracted Data vs ARM</span>
+                          </div>
+                          <table className="w-full">
+                            <thead>
+                              <tr className="border-b border-gray-100">
+                                <th className="text-left py-2.5 px-5 text-xs font-semibold text-gray-400 uppercase">Field</th>
+                                <th className="text-left py-2.5 px-5 text-xs font-semibold text-gray-400 uppercase">
+                                  <i className="fas fa-database mr-1"></i>ARM Record
+                                </th>
+                                <th className="text-left py-2.5 px-5 text-xs font-semibold text-gray-400 uppercase">
+                                  <i className="fas fa-file-image mr-1"></i>From Document
+                                </th>
+                                <th className="text-left py-2.5 px-5 text-xs font-semibold text-gray-400 uppercase">Confidence</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {[
+                                { label: 'Candidate Name', arm: eduResult.arm_record?.name, doc: eduResult.extracted?.candidate_name_normalized && eduResult.extracted.candidate_name_normalized !== eduResult.extracted.candidate_name ? `${eduResult.extracted.candidate_name} → ${eduResult.extracted.candidate_name_normalized}` : eduResult.extracted?.candidate_name, conf: eduResult.extracted?.confidence?.candidate_name },
+                                { label: 'Qualification', arm: eduResult.arm_record?.claimed_qualification, doc: eduResult.extracted?.qualification_type, conf: eduResult.extracted?.confidence?.qualification_type },
+                                { label: 'Board / University', arm: eduResult.arm_record?.board_name, doc: eduResult.extracted?.board_name, conf: null },
+                                { label: 'Roll Number', arm: eduResult.arm_record?.roll_number, doc: eduResult.extracted?.roll_number, conf: eduResult.extracted?.confidence?.roll_number },
+                                { label: 'Passing Year', arm: eduResult.arm_record?.passing_year != null ? String(eduResult.arm_record.passing_year) : null, doc: eduResult.extracted?.passing_year, conf: eduResult.extracted?.confidence?.passing_year },
+                                { label: 'Passing Month', arm: eduResult.arm_record?.passing_month != null ? String(eduResult.arm_record.passing_month) : null, doc: null, conf: null },
+                                { label: 'Institution', arm: null, doc: eduResult.extracted?.institution_name, conf: null },
+                                { label: 'Exam Result', arm: null, doc: eduResult.extracted?.result, conf: null },
+                              ].map((row, i) => (
+                                <tr key={row.label} className={`${i > 0 ? 'border-t border-gray-50' : ''} hover:bg-gray-50`}>
+                                  <td className="py-3 px-5 text-xs font-semibold text-gray-500 uppercase tracking-wide">{row.label}</td>
+                                  <td className="py-3 px-5 text-sm text-gray-600">{row.arm || <span className="text-gray-300">—</span>}</td>
+                                  <td className="py-3 px-5 text-sm font-bold text-gray-800">
+                                    {row.doc != null ? String(row.doc) : <span className="text-red-400 font-normal italic">Not found</span>}
+                                  </td>
+                                  <td className="py-3 px-5">
+                                    {row.conf != null ? (
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                          <div className={`h-full rounded-full ${row.conf >= 0.8 ? 'bg-green-500' : row.conf >= 0.5 ? 'bg-amber-400' : 'bg-red-400'}`} style={{width:`${Math.round(row.conf*100)}%`}}></div>
+                                        </div>
+                                        <span className="text-xs text-gray-500 font-medium">{Math.round(row.conf*100)}%</span>
+                                      </div>
+                                    ) : <span className="text-gray-300 text-xs">—</span>}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {eduResult.extracted?.notes && (
+                            <div className="mx-5 mb-4 mt-1 p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-700">
+                              <i className="fas fa-info-circle mr-1"></i> <strong>AI Notes:</strong> {eduResult.extracted.notes}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* DECISION BUTTONS */}
+                        <div className="bg-white rounded-xl border-2 border-gray-200 px-6 py-5">
+                          <p className="text-sm text-gray-500 font-medium mb-4 text-center">
+                            <i className="fas fa-gavel text-gray-400 mr-1.5"></i>
+                            Make your decision based on the verification results above
+                          </p>
+                          <div className="flex gap-4">
+                            <button className="flex-1 py-4 bg-red-600 text-white rounded-xl text-base font-bold hover:bg-red-700 flex items-center justify-center gap-2 shadow-sm">
+                              <i className="fas fa-times-circle text-lg"></i> Reject
+                            </button>
+                            <button className="flex-1 py-4 bg-amber-500 text-white rounded-xl text-base font-bold hover:bg-amber-600 flex items-center justify-center gap-2 shadow-sm">
+                              <i className="fas fa-redo text-lg"></i> Request More Info
+                            </button>
+                            <button
+                              disabled={(eduResult.verification_score ?? 0) < 65}
+                              className="flex-1 py-4 bg-green-600 text-white rounded-xl text-base font-bold hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm">
+                              <i className="fas fa-check-circle text-lg"></i> Approve Education
+                            </button>
+                          </div>
+                          {(eduResult.verification_score ?? 0) < 65 && (
+                            <p className="text-center text-xs text-red-500 mt-2">
+                              <i className="fas fa-lock mr-1"></i>Approve is locked — verification score below 65 (minimum required)
+                            </p>
+                          )}
+                        </div>
+
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+            </main>
+          </div>
+        </div>
+
+        <footer className="bg-gray-800 text-white py-4 mt-8">
+          <div className="container mx-auto px-6 text-center">
+            <p className="text-xs">Enterprise-grade • Secure by design • IRDAI aligned</p>
+          </div>
+        </footer>
+
+      </div>
+    );
+  }
+
+  // ─── Invoice Configuration Page ──────────────────────────
+  if (page === 'invoice-config') {
+    const handleVendorUpload = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setUploadError('');
+      setUploadMessage('Uploading vendor mapping...');
+      try {
+        const formData = new FormData();
+        formData.append('vendorFile', file);
+        const res = await fetch('/api/config/upload-vendor', { method: 'POST', body: formData });
+        if (!res.ok) throw new Error('Upload failed');
+        const data = await res.json();
+        setUploadMessage(`✓ ${data.message}`);
+        setConfigStatus(prev => ({ ...prev, vendorMappingLoaded: true, vendorCount: data.count }));
+        e.target.value = '';
+      } catch (err) {
+        setUploadError(`Error: ${err.message}`);
+      }
+    };
+
+    const handleBranchUpload = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setUploadError('');
+      setUploadMessage('Uploading branch mapping...');
+      try {
+        const formData = new FormData();
+        formData.append('branchFile', file);
+        const res = await fetch('/api/config/upload-branch', { method: 'POST', body: formData });
+        if (!res.ok) throw new Error('Upload failed');
+        const data = await res.json();
+        setUploadMessage(`✓ ${data.message}`);
+        setConfigStatus(prev => ({ ...prev, branchMappingLoaded: true, branchCount: data.count }));
+        e.target.value = '';
+      } catch (err) {
+        setUploadError(`Error: ${err.message}`);
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white shadow-sm border-b">
+          <div className="container mx-auto px-4 py-6">
+            <div className="flex items-center justify-between">
+              <h1 className="text-2xl font-bold text-gray-800">Invoice Configuration</h1>
+            </div>
+          </div>
+        </header>
+
+        <div className="bg-blue-900 text-white py-2 px-4">
+          <div className="container mx-auto flex items-center justify-between text-sm">
+            <button onClick={() => { setPage('invoices'); }} className="flex items-center space-x-2 hover:text-blue-300 transition-colors">
+              <i className="fas fa-arrow-left"></i><span>Back to Invoices</span>
+            </button>
+            <span className="text-blue-300 text-xs">Configure vendor and branch mappings</span>
+          </div>
+        </div>
+
+        <div className="container mx-auto px-6 py-8 max-w-4xl">
+          {/* Status Panel */}
+          <div className="grid grid-cols-2 gap-4 mb-8">
+            <div className={`rounded-lg p-4 ${configStatus.vendorMappingLoaded ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+              <div className="flex items-center space-x-3">
+                <div className="text-2xl">{configStatus.vendorMappingLoaded ? '✓' : '⚠'}</div>
+                <div>
+                  <p className="font-semibold text-gray-800">Vendor Mapping</p>
+                  <p className="text-sm text-gray-600">{configStatus.vendorCount} vendor{configStatus.vendorCount !== 1 ? 's' : ''} loaded</p>
+                </div>
+              </div>
+            </div>
+            <div className={`rounded-lg p-4 ${configStatus.branchMappingLoaded ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+              <div className="flex items-center space-x-3">
+                <div className="text-2xl">{configStatus.branchMappingLoaded ? '✓' : '⚠'}</div>
+                <div>
+                  <p className="font-semibold text-gray-800">Branch Mapping</p>
+                  <p className="text-sm text-gray-600">{configStatus.branchCount} branch{configStatus.branchCount !== 1 ? 'es' : ''} loaded</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Messages */}
+          {uploadMessage && <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded text-green-700 text-sm">{uploadMessage}</div>}
+          {uploadError && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{uploadError}</div>}
+
+          {/* Vendor Mapping Section */}
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 className="text-xl font-bold text-gray-800 mb-4">Vendor Mapping Configuration</h2>
+            <p className="text-gray-600 text-sm mb-4">Upload an Excel file with vendor names, account codes, and TDS percentages for automatic account code matching during invoice processing.</p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block bg-blue-50 border-2 border-dashed border-blue-300 rounded-lg p-6 text-center cursor-pointer hover:bg-blue-100 transition-colors">
+                  <input type="file" accept=".xlsx,.xls" onChange={handleVendorUpload} className="hidden" />
+                  <i className="fas fa-cloud-upload text-blue-500 text-2xl mb-2 block"></i>
+                  <p className="text-sm font-medium text-gray-700">Upload Vendor Mapping File</p>
+                  <p className="text-xs text-gray-500 mt-1">Excel format (XLSX)</p>
+                </label>
+              </div>
+              <div>
+                <button onClick={() => window.location.href = '/api/templates/download/vendor'} className="w-full block bg-green-50 border-2 border-dashed border-green-300 rounded-lg p-6 text-center hover:bg-green-100 transition-colors cursor-pointer" style={{textDecoration:'none', background:'none', border:'none', padding:0}}>
+                  <div className="block bg-green-50 border-2 border-dashed border-green-300 rounded-lg p-6 text-center hover:bg-green-100 transition-colors">
+                    <i className="fas fa-download text-green-600 text-2xl mb-2 block"></i>
+                    <p className="text-sm font-medium text-gray-700">Download Template</p>
+                    <p className="text-xs text-gray-500 mt-1">Use this as a reference</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Branch Mapping Section */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-bold text-gray-800 mb-4">Branch Mapping Configuration</h2>
+            <p className="text-gray-600 text-sm mb-4">Upload an Excel file with city names and their corresponding branch codes for automatic branch matching based on invoice addresses.</p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block bg-purple-50 border-2 border-dashed border-purple-300 rounded-lg p-6 text-center cursor-pointer hover:bg-purple-100 transition-colors">
+                  <input type="file" accept=".xlsx,.xls" onChange={handleBranchUpload} className="hidden" />
+                  <i className="fas fa-cloud-upload text-purple-500 text-2xl mb-2 block"></i>
+                  <p className="text-sm font-medium text-gray-700">Upload Branch Mapping File</p>
+                  <p className="text-xs text-gray-500 mt-1">Excel format (XLSX)</p>
+                </label>
+              </div>
+              <div>
+                <button onClick={() => window.location.href = '/api/templates/download/branch'} className="w-full block bg-amber-50 border-2 border-dashed border-amber-300 rounded-lg p-6 text-center hover:bg-amber-100 transition-colors cursor-pointer" style={{textDecoration:'none', background:'none', border:'none', padding:0}}>
+                  <div className="block bg-amber-50 border-2 border-dashed border-amber-300 rounded-lg p-6 text-center hover:bg-amber-100 transition-colors">
+                    <i className="fas fa-download text-amber-600 text-2xl mb-2 block"></i>
+                    <p className="text-sm font-medium text-gray-700">Download Template</p>
+                    <p className="text-xs text-gray-500 mt-1">Use this as a reference</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Invoice Processing Page ───────────────────────────
+  if (page === 'invoices') {
+    const handleInvFiles = (e) => {
+      const files = Array.from(e.target.files).filter(f =>
+        f.type === 'application/pdf' || f.type.startsWith('image/') || f.name.match(/\.(pdf|png|jpg|jpeg)$/i)
+      );
+      if (files.length) {
+        setInvFiles(prev => [...prev, ...files]);
+        e.target.value = '';
+      }
+    };
+    const removeInvFile = (idx) => setInvFiles(prev => prev.filter((_, i) => i !== idx));
+    const handleInvUpload = async () => {
+      if (invFiles.length === 0) return;
+      setInvLoading(true);
+      setInvError(null);
+      try {
+        const formData = new FormData();
+        invFiles.forEach(f => formData.append('invoices', f));
+        const res = await fetch('/api/invoices/extract', { method: 'POST', body: formData });
+        if (!res.ok) throw new Error('Extraction failed');
+        const data = await res.json();
+        // Append new invoices to existing data instead of replacing
+        setInvData(prev => prev ? { ...prev, invoices: [...prev.invoices, ...data.invoices], count: prev.count + data.count } : data);
+        setInvFiles([]);
+      } catch (err) {
+        setInvError(err.message || 'Something went wrong');
+      } finally {
+        setInvLoading(false);
+      }
+    };
+    const handleInvDownload = async () => {
+      try {
+        console.log('[DOWNLOAD] invData structure:', invData);
+        console.log('[DOWNLOAD] invData.invoices count:', invData?.invoices?.length);
+
+        const body = JSON.stringify(invData);
+        console.log('[DOWNLOAD] Sending body:', body.substring(0, 300));
+
+        const res = await fetch('/api/invoices/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: body
+        });
+
+        console.log('[DOWNLOAD] Response status:', res.status);
+
+        if (!res.ok) {
+          let errorData = {};
+          try {
+            errorData = await res.json();
+          } catch (e) {
+            console.log('[DOWNLOAD] Could not parse error JSON');
+          }
+          console.log('[DOWNLOAD] Error response:', errorData);
+          throw new Error(errorData.detail || errorData.error || `Download failed with status ${res.status}`);
+        }
+
+        const blob = await res.blob();
+        console.log('[DOWNLOAD] Blob received, size:', blob.size);
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'Invoice_Extraction.xlsx';
+        a.click();
+        URL.revokeObjectURL(url);
+
+        console.log('[DOWNLOAD] Download completed successfully');
+      } catch (err) {
+        console.error('[DOWNLOAD] Error:', err.message);
+        setInvError(err.message);
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b">
+          <div className="container mx-auto px-4 py-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-6 w-56">
+                <img src="/logos/attributum-logo.png" alt="Attributum" className="w-50 h-20 rounded-lg object-contain" style={{maxHeight:'56px',maxWidth:'180px',width:'auto',height:'auto',objectFit:'contain'}} onError={(e)=>{e.target.style.display='none';e.target.nextElementSibling.style.display='flex';}} />
+                <div className="w-50 h-20 bg-blue-600 rounded-lg flex items-center justify-center" style={{display:'none'}}><span className="text-white font-bold text-xl">A</span></div>
+              </div>
+              <div className="flex-1 text-center">
+                <h1 className="text-2xl font-bold text-gray-800">PIVOT Invoices</h1>
+                <p className="text-sm text-gray-600 mt-1">AI-Powered Invoice Data Extraction</p>
+              </div>
+              <div className="flex items-center justify-end space-x-6 w-56">
+                <img src="/logos/pivot-logo.png" alt="PIVOT" className="w-40 h-20 rounded-lg object-contain" style={{maxHeight:'56px',maxWidth:'160px',width:'auto',height:'auto',objectFit:'contain'}} onError={(e)=>{e.target.style.display='none';e.target.nextElementSibling.style.display='flex';}} />
+                <div className="w-40 h-20 bg-purple-600 rounded-lg flex items-center justify-center" style={{display:'none'}}><span className="text-white font-bold text-xl">P</span></div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Nav */}
+        <div className="bg-blue-900 text-white py-2 px-4">
+          <div className="container mx-auto flex items-center justify-between text-sm">
+            <button onClick={() => { setPage('home'); setInvData(null); setInvFiles([]); setInvError(null); }} className="flex items-center space-x-2 hover:text-blue-300 transition-colors">
+              <i className="fas fa-arrow-left"></i><span>Back to Suite</span>
+            </button>
+            <span className="text-blue-300 text-xs">PIVOT Invoice Processing Module</span>
+          </div>
+        </div>
+
+        <div className="container mx-auto px-6 py-8 max-w-7xl">
+          {/* Page Title */}
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-800">PIVOT Invoices</h1>
+              <p className="text-xs text-gray-500 mt-1">AI-powered invoice extraction with journal entry generation</p>
+            </div>
+            <div className="flex items-center space-x-3">
+              <button onClick={() => { setPage('invoice-config'); }} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm transition-colors flex items-center space-x-2">
+                <i className="fas fa-cog"></i><span>Configuration</span>
+              </button>
+              <button onClick={() => { setPage('home'); setInvData(null); setInvFiles([]); setInvError(null); }} className="px-4 py-2 border border-gray-300 text-gray-600 rounded hover:bg-gray-50">
+                ← Back to Home
+              </button>
+            </div>
+          </div>
+
+          {/* LLM Transparency Banner */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+            <div className="flex items-start space-x-3">
+              <i className="fas fa-brain text-blue-600 mt-1 text-lg"></i>
+              <div className="flex-1">
+                <h3 className="font-semibold text-blue-900 mb-1">PIVOT AI-Powered Invoice Handling (Empowered by Claude Sonnet 4)</h3>
+                <p className="text-sm text-blue-800">Uses visual understanding, not OCR. Claude analyzes the invoice document layout, reads vendor details from any location, recognizes GST breakup sections, and extracts line items with context awareness. Each invoice processed independently for maximum accuracy.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Upload Area */}
+          {!invData && (
+            <div className="space-y-6">
+              {/* Upload Guidelines - Compact Horizontal Tiles */}
+              <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <i className="fas fa-info-circle text-amber-600 text-base"></i>
+                    <span className="font-semibold text-gray-800 text-sm">Upload Guidelines:</span>
+                  </div>
+
+                  <div className="flex items-center justify-center space-x-4">
+                    {/* Tile 1: File Limit */}
+                    <div className="w-24 h-24 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200 flex flex-col items-center justify-center hover:shadow-md transition-shadow">
+                      <i className="fas fa-layer-group text-blue-600 text-lg mb-1"></i>
+                      <p className="text-2xl font-bold text-gray-900">10</p>
+                      <p className="text-xs text-gray-600 text-center">Files</p>
+                    </div>
+
+                    {/* Tile 2: File Size */}
+                    <div className="w-24 h-24 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border border-green-200 flex flex-col items-center justify-center hover:shadow-md transition-shadow">
+                      <i className="fas fa-database text-green-600 text-lg mb-1"></i>
+                      <p className="text-xl font-bold text-gray-900">15 MB</p>
+                      <p className="text-xs text-gray-600 text-center">Per File</p>
+                    </div>
+
+                    {/* Tile 3: Formats */}
+                    <div className="w-24 h-24 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg border border-purple-200 flex flex-col items-center justify-center hover:shadow-md transition-shadow">
+                      <i className="fas fa-file-contract text-purple-600 text-lg mb-1"></i>
+                      <p className="text-xs font-bold text-gray-900 text-center">PDF, PNG<br/>JPG</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Upload Box */}
+              <div className="bg-white rounded-xl shadow-lg p-8">
+                <label className="block border-2 border-dashed border-amber-300 rounded-xl p-8 text-center bg-amber-50 hover:bg-amber-100 transition-colors cursor-pointer">
+                  <input type="file" multiple accept=".pdf,.png,.jpg,.jpeg" onChange={handleInvFiles} className="hidden" />
+                  <i className="fas fa-cloud-upload-alt text-amber-400 text-5xl mb-4 block"></i>
+                  <p className="text-lg font-semibold text-gray-700">Drop invoices here or click to browse</p>
+                  <p className="text-sm text-gray-500 mt-2">Upload up to 10 invoices at once (PDF, PNG, JPG)</p>
+                </label>
+
+                {invFiles.length > 0 && (
+                  <div className="mt-8">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-sm font-semibold text-gray-700">Selected Files ({invFiles.length}/10)</h3>
+                      <div className="text-xs text-gray-500">
+                        {invFiles.reduce((sum, f) => sum + f.size, 0) > 0 && `${(invFiles.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(1)} MB total`}
+                      </div>
+                    </div>
+                    <div className="space-y-2 max-h-48 overflow-y-auto mb-4">
+                      {invFiles.map((f, i) => (
+                        <div key={i} className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 border border-gray-200">
+                          <div className="flex items-center space-x-3 flex-1">
+                            <i className="fas fa-file-pdf text-red-500"></i>
+                            <div className="flex-1">
+                              <p className="text-sm text-gray-700 truncate">{f.name}</p>
+                              <p className="text-xs text-gray-400">{(f.size/1024).toFixed(0)} KB</p>
+                            </div>
+                          </div>
+                          <button onClick={() => removeInvFile(i)} type="button" className="text-red-400 hover:text-red-600 ml-2"><i className="fas fa-trash"></i></button>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={handleInvUpload} disabled={invLoading} className="w-full bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center space-x-2">
+                      {invLoading ? (
+                        <React.Fragment><i className="fas fa-spinner fa-spin"></i><span>Extracting {invFiles.length} invoice{invFiles.length !== 1 ? 's' : ''}...</span></React.Fragment>
+                      ) : (
+                        <React.Fragment><i className="fas fa-magic"></i><span>Extract Invoice Data</span></React.Fragment>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {invError && (
+                  <div className="mt-6 bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p className="text-sm text-red-700"><i className="fas fa-exclamation-circle mr-2"></i>{invError}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Results */}
+          {invData && invData.invoices && (
+            <div>
+              {/* Summary Stats */}
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-6 mb-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                      <i className="fas fa-check-double text-green-600 text-lg"></i>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">{invData.invoices.length >= 10 ? 'Maximum Capacity Reached' : 'Extraction Complete'}</p>
+                      <p className="text-2xl font-bold text-green-700">{invData.invoices.length}/10 Invoice{invData.invoices.length !== 1 ? 's' : ''} Extracted</p>
+                    </div>
+                  </div>
+                  <div className="flex space-x-3">
+                    <button onClick={handleInvDownload} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center space-x-2">
+                      <i className="fas fa-download"></i><span>Download Excel</span>
+                    </button>
+                    <button onClick={() => { setInvFiles([]); setInvError(null); }} disabled={invData.invoices.length >= 10} className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-100 disabled:text-gray-400 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center space-x-2">
+                      <i className="fas fa-plus"></i><span>Upload More ({invData.invoices.length}/10)</span>
+                    </button>
+                    <button onClick={() => { setInvData(null); setInvFiles([]); setInvError(null); }} className="bg-red-100 hover:bg-red-200 text-red-700 px-5 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center space-x-2">
+                      <i className="fas fa-trash"></i><span>Clear All</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+                  <p className="text-xs text-gray-500 mb-2">Total Vendor Amount</p>
+                  <p className="text-2xl font-bold text-blue-700">₹{(invData.invoices.reduce((sum, inv) => sum + parseFloat(inv.total_amount || 0), 0)).toLocaleString('en-IN')}</p>
+                </div>
+                <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+                  <p className="text-xs text-gray-500 mb-2">Total Taxable Value</p>
+                  <p className="text-2xl font-bold text-blue-700">₹{(invData.invoices.reduce((sum, inv) => sum + parseFloat(inv.taxable_value_total || 0), 0)).toLocaleString('en-IN')}</p>
+                </div>
+                <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+                  <p className="text-xs text-gray-500 mb-2">Total GST Collected</p>
+                  <p className="text-2xl font-bold text-green-700">₹{(invData.invoices.reduce((sum, inv) => sum + parseFloat(inv.total_tax || 0), 0)).toLocaleString('en-IN')}</p>
+                </div>
+                <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+                  <p className="text-xs text-gray-500 mb-2">Journal Lines</p>
+                  <p className="text-2xl font-bold text-amber-700">{invData.invoices.length * 5}</p>
+                  <p className="text-xs text-gray-400 mt-1">~5 per invoice</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {invData.invoices.map((inv, idx) => {
+                  const isExpanded = expandedInvoice === idx;
+                  return (
+                    <div key={idx} className="bg-white rounded-xl shadow-lg overflow-hidden">
+                      <button
+                        onClick={() => setExpandedInvoice(isExpanded ? null : idx)}
+                        className="w-full bg-amber-50 border-b border-amber-200 px-6 py-4 flex items-center justify-between hover:bg-amber-100 transition-colors text-left"
+                      >
+                        <div>
+                          <h3 className="font-bold text-gray-800">{inv.vendor_name || 'Unknown Vendor'}</h3>
+                          <p className="text-sm text-gray-500">Invoice #{inv.invoice_number || 'N/A'} | {inv.invoice_date || 'N/A'}</p>
+                        </div>
+                        <div className="flex items-center space-x-4">
+                          <div className="text-right">
+                            <p className="text-xl font-bold text-amber-700">₹{parseFloat(inv.total_amount || 0).toLocaleString('en-IN')}</p>
+                            <p className="text-xs text-gray-500">Total</p>
+                          </div>
+                          <i className={`fas fa-chevron-down text-amber-600 transition-transform ${isExpanded ? 'rotate-180' : ''}`}></i>
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="p-6 space-y-6">
+                          {/* Vendor Details */}
+                          <div className="border-b pb-4">
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center"><i className="fas fa-building text-amber-600 mr-2"></i>Vendor Details</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                              <div><p className="text-gray-400 text-xs mb-1">Vendor Name</p><p className="font-medium text-gray-700">{inv.vendor_name || 'N/A'}</p></div>
+                              <div><p className="text-gray-400 text-xs mb-1">Vendor Code</p><p className="font-medium text-gray-700">{inv.vendor_code || 'N/A'}</p></div>
+                              <div><p className="text-gray-400 text-xs mb-1">GSTIN</p><p className="font-medium text-gray-700">{inv.gstin || 'N/A'}</p></div>
+                              <div><p className="text-gray-400 text-xs mb-1">PAN</p><p className="font-medium text-gray-700">{inv.pan || 'N/A'}</p></div>
+                              <div className="md:col-span-2"><p className="text-gray-400 text-xs mb-1">Address</p><p className="font-medium text-gray-700 text-xs">{inv.vendor_address || 'N/A'}</p></div>
+                            </div>
+                          </div>
+
+                          {/* Invoice Details */}
+                          <div className="border-b pb-4">
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center"><i className="fas fa-file-invoice text-amber-600 mr-2"></i>Invoice Details</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                              <div><p className="text-gray-400 text-xs mb-1">Invoice #</p><p className="font-medium text-gray-700">{inv.invoice_number || 'N/A'}</p></div>
+                              <div><p className="text-gray-400 text-xs mb-1">Invoice Date</p><p className="font-medium text-gray-700">{inv.invoice_date || 'N/A'}</p></div>
+                              <div><p className="text-gray-400 text-xs mb-1">Payment Terms</p><p className="font-medium text-gray-700">{inv.payment_terms || 'N/A'}</p></div>
+                              <div><p className="text-gray-400 text-xs mb-1">Curr Code</p><p className="font-medium text-gray-700">INR</p></div>
+                            </div>
+                          </div>
+
+                          {/* Line Items */}
+                          {inv.line_items && inv.line_items.length > 0 && (
+                            <div className="border-b pb-4">
+                              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center"><i className="fas fa-list text-amber-600 mr-2"></i>Line Items</h4>
+                              <div className="bg-gray-50 rounded-lg overflow-hidden">
+                                <table className="w-full text-xs">
+                                  <thead className="bg-gray-100 border-b">
+                                    <tr>
+                                      <th className="px-3 py-2 text-left text-gray-600">Description</th>
+                                      <th className="px-3 py-2 text-left text-gray-600">HSN/SAC</th>
+                                      <th className="px-3 py-2 text-right text-gray-600">Amount</th>
+                                      <th className="px-3 py-2 text-right text-gray-600">GST %</th>
+                                      <th className="px-3 py-2 text-right text-gray-600">Qty</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {inv.line_items.map((item, i) => (
+                                      <tr key={i} className="border-b hover:bg-white transition-colors">
+                                        <td className="px-3 py-2 text-gray-700">{item.description || 'N/A'}</td>
+                                        <td className="px-3 py-2 text-gray-700">{item.hsn_sac || 'N/A'}</td>
+                                        <td className="px-3 py-2 text-right text-gray-700">₹{parseFloat(item.taxable_value || 0).toLocaleString('en-IN')}</td>
+                                        <td className="px-3 py-2 text-right text-gray-700">{item.gst_rate || 'N/A'}%</td>
+                                        <td className="px-3 py-2 text-right text-gray-700">{item.qty || 'N/A'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* GST Breakdown */}
+                          <div className="border-b pb-4">
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center"><i className="fas fa-chart-pie text-amber-600 mr-2"></i>GST Breakdown</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                              <div className="bg-blue-50 p-3 rounded"><p className="text-gray-400 text-xs mb-1">Taxable Value</p><p className="font-bold text-blue-700">₹{parseFloat(inv.taxable_value_total || 0).toLocaleString('en-IN')}</p></div>
+                              {inv.cgst_amount && <div className="bg-green-50 p-3 rounded"><p className="text-gray-400 text-xs mb-1">CGST</p><p className="font-bold text-green-700">₹{parseFloat(inv.cgst_amount).toLocaleString('en-IN')}</p></div>}
+                              {inv.sgst_amount && <div className="bg-green-50 p-3 rounded"><p className="text-gray-400 text-xs mb-1">SGST</p><p className="font-bold text-green-700">₹{parseFloat(inv.sgst_amount).toLocaleString('en-IN')}</p></div>}
+                              {inv.igst_amount && <div className="bg-green-50 p-3 rounded"><p className="text-gray-400 text-xs mb-1">IGST</p><p className="font-bold text-green-700">₹{parseFloat(inv.igst_amount).toLocaleString('en-IN')}</p></div>}
+                              <div className="bg-gray-100 p-3 rounded"><p className="text-gray-400 text-xs mb-1">Total Tax</p><p className="font-bold text-gray-800">₹{parseFloat(inv.total_tax || 0).toLocaleString('en-IN')}</p></div>
+                              <div className="bg-amber-100 p-3 rounded md:col-span-1"><p className="text-gray-400 text-xs mb-1">Total Amount</p><p className="font-bold text-amber-800">₹{parseFloat(inv.total_amount || 0).toLocaleString('en-IN')}</p></div>
+                            </div>
+                          </div>
+
+                          {/* Journal Entry Preview */}
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center"><i className="fas fa-scroll text-amber-600 mr-2"></i>Journal Entry Preview</h4>
+                            <div className="bg-blue-50 rounded-lg p-3 text-xs border border-blue-200 space-y-2">
+                              <p className="text-blue-800"><strong>This invoice will generate the following journal entries:</strong></p>
+                              <ul className="list-disc list-inside space-y-1 text-blue-700">
+                                <li>Expense Debit to GL 1310020100: ₹{parseFloat(inv.taxable_value_total || 0).toLocaleString('en-IN')}</li>
+                                {inv.sgst_amount && <li>SGST Input Credit (GL 1120599005): ₹{parseFloat(inv.sgst_amount).toLocaleString('en-IN')}</li>}
+                                {inv.cgst_amount && <li>CGST Input Credit (GL 1120599007): ₹{parseFloat(inv.cgst_amount).toLocaleString('en-IN')}</li>}
+                                {inv.igst_amount && <li>IGST Input Credit (GL 1120599009): ₹{parseFloat(inv.igst_amount).toLocaleString('en-IN')}</li>}
+                                <li>Vendor Credit to {inv.vendor_code || 'VENDOR'}: ₹{parseFloat(inv.total_amount || 0).toLocaleString('en-IN')}</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <footer className="bg-gray-800 text-white py-4 mt-8">
+          <div className="container mx-auto px-6 text-center">
+            <p className="text-xs">Enterprise-grade Secure by design IRDAI aligned</p>
           </div>
         </footer>
       </div>
